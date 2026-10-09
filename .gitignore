@@ -1,0 +1,9 @@
+node_modules/
+dist/
+server/bin/
+server/obj/
+test-results/
+playwright-report/
+artifacts/*.zip
+__pycache__/
+artifacts/github-release/

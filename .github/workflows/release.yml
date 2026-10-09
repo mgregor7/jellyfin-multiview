@@ -1,0 +1,53 @@
+name: Publish Jellyfin plugin
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/release.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: publish-plugin
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build and test web client
+        run: |
+          npm ci
+          npm test
+          npx playwright install --with-deps chromium
+          npm run test:browser
+      - name: Build plugin and packages
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          dotnet build server/Jellyfin.Plugin.Multiview.csproj -c Release
+          python3 scripts/package.py
+          python3 scripts/package-repository.py
+          python3 scripts/package-github.py --repository "$REPOSITORY"
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Publish release and repository manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("artifacts/github-release/manifest.json"))[0]["versions"][0]["version"])')
+          gh release create "v${version}" \
+            "artifacts/github-release/manifest.json" \
+            "artifacts/github-release/multiview_${version}.zip" \
+            artifacts/jellyfin-multiview-0.1.0.zip \
+            artifacts/jellyfin-multiview-local-repo.zip \
+            --repo "$REPOSITORY" --target "$COMMIT" \
+            --title "Multiview ${version}" --notes-file docs/RELEASE-NOTES.md --latest

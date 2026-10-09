@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Jellyfin.Plugin.Multiview</AssemblyName>
+    <RootNamespace>Jellyfin.Plugin.Multiview</RootNamespace>
+    <Version>0.1.0.0</Version>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Jellyfin.Controller" Version="12.1.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Model" Version="12.1.0" ExcludeAssets="runtime" />
+    <EmbeddedResource Include="../dist/multiview.js" LogicalName="Jellyfin.Plugin.Multiview.multiview.js" />
+    <EmbeddedResource Include="Configuration/configPage.html" />
+  </ItemGroup>
+  <Target Name="RequireWebBuild" BeforeTargets="BeforeBuild" Condition="!Exists('../dist/multiview.js')">
+    <Error Text="Run npm ci and npm run build in the project root before building the plugin." />
+  </Target>
+</Project>
