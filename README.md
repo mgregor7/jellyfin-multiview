@@ -1,6 +1,24 @@
 # Jellyfin Multiview
 
-Local plugin project targeting **Jellyfin Server/Web 12.1**. Nothing is installed into a Jellyfin server by building this project.
+Plugin project targeting **Jellyfin Server/Web 12.1**. Nothing is installed into a Jellyfin server by building this project.
+
+## Install from GitHub
+
+In **Dashboard → Plugins → Repositories**, add **Multiview** with this URL:
+
+```text
+https://github.com/mgregor7/jellyfin-multiview/releases/latest/download/manifest.json
+```
+
+Open the catalog, install **Multiview**, and restart Jellyfin. Remove or disable the old localhost repository if its helper is no longer running. A server older than **12.1.0.0** will filter this build out of the catalog.
+
+**The web integration is also required.** Download `jellyfin-multiview-0.1.0.zip` from [Releases](https://github.com/mgregor7/jellyfin-multiview/releases/latest), extract it, and run from that directory:
+
+```sh
+node scripts/install-web.mjs /actual/path/to/jellyfin-web
+```
+
+Reload Jellyfin Web and start a library video. See the installation details below for Docker, permissions, and existing JavaScript injectors.
 
 Start a library video normally, select **Multiview**, and use **+ Add stream** to browse folders or search your library. Selecting a video adds it and closes the sidebar. The original player stays mounted in its original container; added videos have independent players and playback sessions.
 
