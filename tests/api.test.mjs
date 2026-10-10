@@ -30,3 +30,18 @@ test('session IDs work on HTTP LAN origins without randomUUID', () => {
   assert.match(randomId(provider), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.notEqual(randomId(provider), randomId(provider));
 });
+
+test('media URLs use supported Jellyfin authentication and the pane identity', () => {
+  const api = new JellyfinApi(client);
+  const url = new URL(api.mediaUrl('Videos/id/master.m3u8', { api_key: 'old', PlaySessionId: 'session' }));
+  assert.equal(url.searchParams.get('ApiKey'), 'secret');
+  assert.equal(url.searchParams.has('api_key'), false);
+  assert.equal(url.searchParams.get('DeviceId'), api.deviceId);
+  assert.equal(url.searchParams.get('PlaySessionId'), 'session');
+  assert.equal(api.isServerUrl('https://other.test/segment.ts'), false);
+  assert.equal(api.isServerUrl('https://example.test/jellyfin/segment.ts'), true);
+});
+test('library browsing can reuse the main identity without creating a new device each request', () => {
+  const api = new JellyfinApi(client, undefined, false);
+  assert.equal(api.deviceId, 'main');
+});

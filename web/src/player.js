@@ -17,8 +17,10 @@ export class StreamPlayer {
       CanSeek: Number.isFinite(this.video.duration), PlayMethod: this.method };
   }
   report(kind, keepalive = false) {
+    if (kind === '/Progress' && this.progressPending) return this.reportQueue.catch(() => {});
+    if (kind === '/Progress') this.progressPending = true;
     const body = this.payload();
-    this.reportQueue = this.reportQueue.catch(() => {}).then(() => this.api.request(`Sessions/Playing${kind}`, { method: 'POST', body, keepalive }));
+    this.reportQueue = this.reportQueue.catch(() => {}).then(() => this.api.request(`Sessions/Playing${kind}`, { method: 'POST', body, keepalive, signal: AbortSignal.timeout(15000) })).finally(() => { if (kind === '/Progress') this.progressPending = false; });
     return this.reportQueue.catch(() => this.onStatus('Playback reporting unavailable'));
   }
   listen(event, handler) {
@@ -53,14 +55,14 @@ export class StreamPlayer {
       let hls = false;
       if (source.SupportsDirectPlay || source.SupportsDirectStream) {
         this.method = source.SupportsDirectPlay ? 'DirectPlay' : 'DirectStream';
-        url = this.api.url(`Videos/${this.item.Id}/stream.${source.Container || 'mp4'}`, {
+        url = this.api.mediaUrl(`Videos/${this.item.Id}/stream.${source.Container || 'mp4'}`, {
           Static: true, MediaSourceId: source.Id, DeviceId: this.api.deviceId,
-          PlaySessionId: this.session, api_key: this.api.client.accessToken(),
+          PlaySessionId: this.session,
           ...(source.LiveStreamId ? { LiveStreamId: source.LiveStreamId } : {})
         });
       } else if (source.TranscodingUrl) {
         this.method = 'Transcode';
-        url = this.api.url(source.TranscodingUrl);
+        url = this.api.mediaUrl(source.TranscodingUrl);
         hls = source.TranscodingSubProtocol === 'hls' || /\.m3u8(?:\?|$)/i.test(url);
       } else throw new Error('This source did not return a playable URL.');
       this.listen('playing', () => {
@@ -68,6 +70,7 @@ export class StreamPlayer {
         if (!this.started) { this.started = true; void this.report(''); }
         else void this.report('/Progress');
       });
+      this.listen('seeked', () => { if (this.started && !this.closed) void this.report('/Progress'); });
       this.listen('pause', () => { if (this.started && !this.closed) void this.report('/Progress'); });
       this.listen('waiting', () => this.onStatus('Buffering…'));
       this.listen('error', () => {
@@ -78,7 +81,11 @@ export class StreamPlayer {
       this.timer = setInterval(() => { if (this.started && !this.closed) void this.report('/Progress'); }, 10000);
       this.video.muted = true;
       if (hls && Hls.isSupported()) {
-        this.hls = new Hls({ maxBufferLength: 20, backBufferLength: 15 });
+        this.hls = new Hls({ maxBufferLength: 15, maxMaxBufferLength: 30, backBufferLength: 10,
+          xhrSetup: (xhr, requestUrl) => {
+            if (this.api.isServerUrl(requestUrl)) xhr.setRequestHeader('Authorization', this.api.authorization());
+          }
+        });
         this.hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
             this.onStatus('Stream failed. Remove it and try adding it again.');

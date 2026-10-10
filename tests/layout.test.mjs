@@ -29,3 +29,19 @@ test('layouts fill available space without overlapping for 2–9 players', () =>
 test('dragged and resized panes stay in bounds', () => {
   assert.deepEqual(constrain({ x: -2, y: 2, w: 3, h: .01 }), { x: 0, y: .85, w: 1, h: .15 });
 });
+
+test('equal preset gives every window the same allocation at odd counts', () => {
+  for (const count of [3, 5, 7, 9]) {
+    const cells = layout(count, 'equal');
+    assert.ok(cells.every(r => r.w === cells[0].w && r.h === cells[0].h));
+  }
+});
+test('main presets reserve exactly half the screen for the selected main allocation', () => {
+  for (const preset of ['main-left', 'main-top']) {
+    for (let count = 2; count <= 9; count++) {
+      const [main, ...rest] = layout(count, preset);
+      assert.equal(main.w * main.h, .5);
+      for (const r of rest) assert.ok(preset === 'main-left' ? r.x >= .5 : r.y >= .5);
+    }
+  }
+});

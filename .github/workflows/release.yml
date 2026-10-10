@@ -2,7 +2,7 @@ name: Publish Jellyfin plugin
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/release.yml']
+    paths: ['.github/workflows/release.yml', 'server/Jellyfin.Plugin.Multiview.csproj']
   workflow_dispatch:
 permissions:
   contents: write
@@ -47,7 +47,7 @@ jobs:
           gh release create "v${version}" \
             "artifacts/github-release/manifest.json" \
             "artifacts/github-release/multiview_${version}.zip" \
-            artifacts/jellyfin-multiview-0.1.0.zip \
+            artifacts/jellyfin-multiview-0.2.0.zip \
             artifacts/jellyfin-multiview-local-repo.zip \
             --repo "$REPOSITORY" --target "$COMMIT" \
             --title "Multiview ${version}" --notes-file docs/RELEASE-NOTES.md --latest

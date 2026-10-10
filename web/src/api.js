@@ -9,22 +9,36 @@ export function randomId(cryptoProvider = globalThis.crypto) {
 }
 
 export class JellyfinApi {
-  constructor(client, fetcher = globalThis.fetch.bind(globalThis)) {
+  constructor(client, fetcher = globalThis.fetch.bind(globalThis), separateDevice = true) {
     this.client = client;
     this.fetcher = fetcher;
     this.userId = client.getCurrentUserId();
     // Separate device identities prevent secondary players replacing the main session.
-    this.deviceId = `${client.deviceId()}-multiview-${randomId()}`;
+    this.deviceId = separateDevice ? `${client.deviceId()}-multiview-${randomId()}` : client.deviceId();
   }
   url(path, query = {}) {
     return this.client.getUrl(path.replace(/^\//, ''), query);
   }
+  authorization() {
+    const quote = value => encodeURIComponent(String(value));
+    // Preserve the original app metadata to avoid repeatedly rewriting the shared token's device record.
+    return `MediaBrowser Client="${quote(this.client.appName?.() || 'Multiview')}", Device="${quote(this.client.deviceName?.() || 'Web')}", DeviceId="${quote(this.deviceId)}", Version="${quote(this.client.appVersion?.() || '0.2.0')}", Token="${quote(this.client.accessToken())}"`;
+  }
+  mediaUrl(path, query = {}) {
+    const url = new URL(this.url(path, query), globalThis.location?.href);
+    url.searchParams.delete('api_key');
+    url.searchParams.set('ApiKey', this.client.accessToken());
+    url.searchParams.set('DeviceId', this.deviceId);
+    return url.href;
+  }
+  isServerUrl(url) {
+    return new URL(url, globalThis.location?.href).origin === new URL(this.url(''), globalThis.location?.href).origin;
+  }
   async request(path, { method = 'GET', query, body, signal, keepalive = false } = {}) {
-    const quote = value => String(value).replace(/["\\\r\n]/g, '');
     const response = await this.fetcher(this.url(path, query), {
       method, signal, keepalive,
       headers: {
-        Authorization: `MediaBrowser Client="Multiview", Device="Web", DeviceId="${quote(this.deviceId)}", Version="0.1.0", Token="${quote(this.client.accessToken())}"`,
+        Authorization: this.authorization(),
         'Content-Type': 'application/json'
       },
       body: body === undefined ? undefined : JSON.stringify(body)

@@ -1,7 +1,9 @@
-import { layout, constrain } from './layout.js';
+import { layout, constrain, fitViewport, HEADER, CHROME } from './layout.js';
 import { JellyfinApi } from './api.js';
 import { StreamPlayer } from './player.js';
 import css from './multiview.css';
+import { PRESETS } from './layout.js';
+import { seekRanges, seekTarget, playbackSample } from './media.js';
 
 const MAX_STREAMS = 9;
 const el = (tag, className, text) => {
@@ -26,6 +28,11 @@ export class Multiview {
     this.tiles = [];
     this.pending = new Set();
     this.closed = false;
+    this.preset = 'sports';
+    this.snap = true;
+    this.mainTile = null;
+    this.browseApi = new JellyfinApi(client, undefined, false);
+    this.paintCount = 0;
     this.originalStyle = video.getAttribute('style');
     this.containerStyle = this.container.getAttribute('style');
     this.originalMuted = video.muted;
@@ -35,11 +42,23 @@ export class Multiview {
     this.toolbar.append(el('strong', '', 'MULTIVIEW'));
     this.counter = el('span', 'mv-counter');
     this.addButton = button('+ Add stream', () => this.openBrowser());
-    this.toolbar.append(this.counter, this.addButton, button('Auto layout', () => this.arrange()), button('Exit multiview', () => this.close()));
+    this.layoutButton = button('Auto layout ▾', () => this.toggleLayouts(), 'Auto layout');
+    this.layoutButton.setAttribute('aria-expanded', 'false');
+    this.fullscreenButton = button('Fullscreen', () => this.toggleFullscreen());
+    this.collapseButton = button('Hide toolbar', () => this.setCollapsed(true));
+    this.showToolbar = button('Show toolbar', () => this.setCollapsed(false));
+    this.showToolbar.classList.add('mv-show-toolbar');
+    this.showToolbar.hidden = true;
+    this.toolbar.append(this.counter, this.addButton, this.layoutButton, this.fullscreenButton,
+      button('Diagnostics', () => this.toggleDiagnostics()), this.collapseButton, button('Exit multiview', () => this.close()));
     this.stage = el('div', 'mv-stage');
     this.notice = el('div', 'mv-notice');
     this.notice.setAttribute('role', 'status');
-    this.root.append(this.toolbar, this.stage, this.notice);
+    this.root.append(this.toolbar, this.stage, this.notice, this.showToolbar);
+    // Do not let Multiview controls reach Jellyfin's delegated playback handlers.
+    for (const event of ['click', 'dblclick', 'pointerdown', 'pointerup', 'keydown', 'keyup']) {
+      this.root.addEventListener(event, e => e.stopPropagation());
+    }
     this.container.classList.add('mv-active');
     this.container.append(this.root);
     video.classList.add('mv-original-video');
@@ -57,23 +76,131 @@ export class Multiview {
     video.addEventListener('ended', this.onEnded);
     video.addEventListener('emptied', this.onEnded);
     this.addButton.focus();
-    this.gamepadFrame = requestAnimationFrame(() => this.pollGamepad());
+    this.onFullscreen = () => {
+      const label = document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen';
+      this.fullscreenButton.textContent = label;
+      this.fullscreenButton.setAttribute('aria-label', label);
+      this.paint();
+    };
+    document.addEventListener('fullscreenchange', this.onFullscreen);
+    this.gamepadTimer = setInterval(() => this.pollGamepad(), 120);
+    this.monitor = setInterval(() => this.updatePlayback(), 1000);
   }
-  say(message) { this.notice.textContent = message; }
+  say(message) { if (this.notice.textContent !== message) this.notice.textContent = message; }
+  setCollapsed(collapsed) {
+    this.root.classList.toggle('mv-collapsed', collapsed);
+    this.toolbar.hidden = collapsed;
+    this.showToolbar.hidden = !collapsed;
+    this.closeLayouts();
+    (collapsed ? this.showToolbar : this.collapseButton).focus();
+    this.paint();
+  }
+  async toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else {
+        if (!this.container.requestFullscreen) throw new Error('Fullscreen is not available in this browser.');
+        // Fullscreen the existing parent: the original video is never moved.
+        await this.container.requestFullscreen();
+        this.ownsFullscreen = true;
+      }
+    } catch (error) { this.say(error.message || 'Unable to enter fullscreen.'); }
+  }
+  toggleLayouts() {
+    if (this.layoutMenu) { this.closeLayouts(); return; }
+    this.layoutMenu = el('div', 'mv-layout-menu');
+    this.layoutMenu.setAttribute('role', 'group');
+    this.layoutMenu.setAttribute('aria-label', 'Layout presets');
+    for (const [id, name] of PRESETS) {
+      const choice = button(name, () => { this.preset = id; this.arrange(); this.closeLayouts(); });
+      choice.setAttribute('aria-pressed', String(id === this.preset));
+      this.layoutMenu.append(choice);
+    }
+    const fit = button('Fit windows to video', () => {
+      this.snap = !this.snap;
+      fit.setAttribute('aria-pressed', String(this.snap));
+      this.paint();
+    });
+    fit.setAttribute('aria-pressed', String(this.snap));
+    this.layoutMenu.append(fit);
+    this.root.append(this.layoutMenu);
+    this.layoutButton.setAttribute('aria-expanded', 'true');
+    this.layoutMenu.querySelector('button').focus();
+  }
+  closeLayouts() {
+    const focused = this.layoutMenu?.contains(document.activeElement);
+    this.layoutMenu?.remove(); this.layoutMenu = null;
+    if (focused && !this.toolbar.hidden) this.layoutButton.focus();
+    this.layoutButton.setAttribute('aria-expanded', 'false');
+  }
+  toggleDiagnostics() {
+    if (this.diagnostics) { this.diagnostics.remove(); this.diagnostics = null; return; }
+    this.diagnostics = el('pre', 'mv-diagnostics');
+    this.diagnostics.setAttribute('aria-label', 'Playback diagnostics');
+    this.root.append(this.diagnostics);
+    this.updatePlayback();
+  }
+  updatePlayback() {
+    for (const tile of this.tiles) {
+      tile.sample = playbackSample(tile.video, tile.sample);
+      this.updateControls(tile);
+      if (tile.original && tile.sample.state === 'Stalled') {
+        tile.status.textContent = tile.sample.buffer < .1 ? 'No buffered data. Check stream/server connection.' : 'Playback stalled with buffered data. See Diagnostics.';
+      } else if (tile.original && tile.sample.state === 'Playing') tile.status.textContent = '';
+    }
+    if (this.diagnostics) this.diagnostics.textContent = this.tiles.map((tile, i) => {
+      const s = tile.sample;
+      return `${i + 1}. ${tile.name}: ${s.state}\n  buffer ${s.buffer.toFixed(1)}s · ready ${s.readyState} · network ${s.networkState}\n  frames ${s.frames ?? 'n/a'} · dropped ${s.dropped ?? 'n/a'} · time ${s.time.toFixed(1)}s`;
+    }).join('\n\n');
+  }
+  updateControls(tile) {
+    const { video } = tile;
+    const label = video.paused ? 'Play' : 'Pause';
+    if (tile.play.textContent !== label) tile.play.textContent = label;
+    tile.play.setAttribute('aria-label', `${label} ${tile.name}`);
+    const ranges = seekRanges(video);
+    tile.back.disabled = tile.forward.disabled = tile.seek.disabled = tile.latest.disabled = !ranges.length;
+    if (ranges.length) {
+      tile.seek.min = String(ranges[0].start);
+      tile.seek.max = String(ranges.at(-1).end);
+      if (document.activeElement !== tile.seek) tile.seek.value = String(video.currentTime);
+    }
+    tile.volume.value = String(video.volume);
+    const audioLabel = video.muted ? 'Listen' : 'Audio on';
+    if (tile.audio.textContent !== audioLabel) tile.audio.textContent = audioLabel;
+  }
+  seek(tile, target) {
+    const value = seekTarget(seekRanges(tile.video), target);
+    if (value === null) { this.say('This stream does not currently offer a seekable buffer.'); return; }
+    try { tile.video.currentTime = value; }
+    catch { this.say('Seeking is unavailable for this stream.'); }
+  }
+  async togglePlay(tile) {
+    if (!tile.video.paused) tile.video.pause();
+    else try { await tile.video.play(); } catch { tile.status.textContent = 'Unable to play. The stream may have disconnected.'; }
+    this.updateControls(tile);
+  }
   addTile(video, name, original = false) {
     const node = el('article', `mv-tile${original ? ' mv-original-tile' : ''}`);
     const heading = el('div', 'mv-tile-heading');
     const title = el('span', 'mv-title', name);
     heading.append(title);
     const audio = button(original && !video.muted ? 'Audio on' : 'Listen', () => this.listen(tile));
-    const tile = { video, node, heading, original, audio };
+    const tile = { video, node, heading, original, audio, name, listeners: [] };
+    if (!this.mainTile) this.mainTile = tile;
+    tile.main = button('★', () => {
+      this.mainTile = tile;
+      for (const entry of this.tiles) entry.main.setAttribute('aria-pressed', String(entry === tile));
+      this.arrange();
+    }, `Use ${name} as main window`);
+    tile.main.setAttribute('aria-pressed', String(this.mainTile === tile));
+    heading.append(tile.main);
     const status = el('div', 'mv-status');
     status.setAttribute('role', 'status');
     tile.status = status;
     heading.append(audio);
     if (!original) {
-      heading.append(button('Play', () => video.play().catch(() => { status.textContent = 'Unable to play this stream.'; })),
-        button('×', () => this.remove(tile), `Remove ${name}`));
+      heading.append(button('×', () => this.remove(tile), `Remove ${name}`));
       node.append(video);
     }
     const move = button('↔', () => {}, `Move ${name}: use arrow keys`);
@@ -82,11 +209,31 @@ export class Multiview {
     const resize = button('↘', () => {}, `Resize ${name}: use arrow keys`);
     resize.classList.add('mv-resize');
     heading.prepend(move);
-    node.append(heading, status, resize);
+    const controls = el('div', 'mv-controls');
+    const row = el('div', 'mv-control-row');
+    tile.play = button(video.paused ? 'Play' : 'Pause', () => this.togglePlay(tile));
+    tile.back = button('−10s', () => this.seek(tile, video.currentTime - 10), `Rewind ${name} 10 seconds`);
+    tile.forward = button('+10s', () => this.seek(tile, video.currentTime + 10), `Forward ${name} 10 seconds`);
+    tile.latest = button('Latest', () => this.seek(tile, seekRanges(video).at(-1)?.end), `Jump ${name} to latest available position`);
+    tile.volume = el('input', 'mv-volume'); tile.volume.type = 'range';
+    tile.volume.min = '0'; tile.volume.max = '1'; tile.volume.step = '.05';
+    tile.volume.setAttribute('aria-label', `Volume ${name}`);
+    tile.volume.addEventListener('input', () => { video.volume = Number(tile.volume.value); });
+    tile.seek = el('input', 'mv-seek'); tile.seek.type = 'range'; tile.seek.step = '.1';
+    tile.seek.setAttribute('aria-label', `Seek ${name}`);
+    tile.seek.addEventListener('change', () => this.seek(tile, Number(tile.seek.value)));
+    row.append(tile.play, tile.back, tile.forward, tile.latest, tile.volume);
+    controls.append(row, tile.seek);
+    node.append(heading, controls, status, resize);
+    const watch = (event, handler) => { video.addEventListener(event, handler); tile.listeners.push([event, handler]); };
+    for (const event of ['play', 'pause', 'volumechange', 'durationchange', 'progress']) watch(event, () => this.updateControls(tile));
+    watch('loadedmetadata', () => { this.updateControls(tile); this.paint(); });
+    watch('resize', () => this.paint());
     this.stage.append(node);
     this.tiles.push(tile);
     this.bindGeometry(tile, move, false);
     this.bindGeometry(tile, resize, true);
+    this.updateControls(tile);
     this.arrange();
     return tile;
   }
@@ -124,25 +271,33 @@ export class Multiview {
     });
   }
   arrange() {
-    const positions = layout(this.tiles.length);
-    this.tiles.forEach((tile, i) => { tile.rect = positions[i]; });
+    const positions = layout(this.tiles.length, this.preset);
+    const ordered = this.preset.startsWith('main-')
+      ? [this.mainTile, ...this.tiles.filter(tile => tile !== this.mainTile)] : this.tiles;
+    ordered.forEach((tile, i) => { tile.rect = positions[i]; });
     this.counter.textContent = `${this.tiles.length} / ${MAX_STREAMS} streams`;
     this.paint();
   }
   paint() {
-    if (this.closed) return;
-    const bounds = this.stage.getBoundingClientRect();
-    this.tiles.forEach(tile => {
-      const r = tile.rect;
-      if (!r) return;
-      const geometry = { left: `${r.x * bounds.width + 4}px`, top: `${r.y * bounds.height + 4}px`, width: `${Math.max(0, r.w * bounds.width - 8)}px`, height: `${Math.max(0, r.h * bounds.height - 8)}px` };
-      Object.assign(tile.node.style, geometry);
-      if (tile.original) {
-        Object.assign(tile.video.style, geometry, {
-          left: `${bounds.left + r.x * bounds.width + 4}px`, top: `${bounds.top + r.y * bounds.height + 40}px`,
-          height: `${Math.max(0, r.h * bounds.height - 44)}px`
-        });
-      }
+    if (this.closed || this.paintFrame) return;
+    this.paintFrame = requestAnimationFrame(() => {
+      this.paintFrame = null;
+      if (this.closed) return;
+      this.paintCount++;
+      const bounds = this.stage.getBoundingClientRect();
+      this.tiles.forEach(tile => {
+        if (!tile.rect) return;
+        const aspect = tile.video.videoWidth && tile.video.videoHeight ? tile.video.videoWidth / tile.video.videoHeight : 16 / 9;
+        const g = fitViewport(tile.rect, bounds.width, bounds.height, aspect, this.snap);
+        Object.assign(tile.node.style, { left: `${g.x}px`, top: `${g.y}px`, width: `${g.w}px`, height: `${g.h}px` });
+        if (tile.original) {
+          // Keep the original in its existing DOM location; only its CSS box changes.
+          for (const [key, value] of Object.entries({ left: bounds.left + g.x + 1,
+            top: bounds.top + g.y + HEADER + 1, width: g.w - 2, height: g.h - CHROME })) {
+            tile.video.style.setProperty(key, `${Math.max(0, value)}px`, 'important');
+          }
+        }
+      });
     });
   }
   listen(selected) {
@@ -155,8 +310,13 @@ export class Multiview {
   }
   remove(tile) {
     void tile.player?.stop();
+    for (const [event, handler] of tile.listeners) tile.video.removeEventListener(event, handler);
     tile.node.remove();
     this.tiles = this.tiles.filter(t => t !== tile);
+    if (this.mainTile === tile) {
+      this.mainTile = this.tiles[0];
+      this.mainTile.main.setAttribute('aria-pressed', 'true');
+    }
     this.arrange();
     this.addButton.focus();
   }
@@ -178,6 +338,7 @@ export class Multiview {
   }
   openBrowser() {
     if (this.sidebar) return;
+    this.closeLayouts();
     this.root.classList.add('mv-browsing');
     this.sidebar = el('aside', 'mv-sidebar');
     this.sidebar.setAttribute('aria-label', 'Browse library');
@@ -211,7 +372,7 @@ export class Multiview {
     this.path.forEach((part, index) => this.breadcrumb.append(button(part.Name, () => { this.path = this.path.slice(0, index + 1); this.search.value = ''; this.loadItems(); })));
     if (!startIndex) this.results.replaceChildren(el('p', '', 'Loading…'));
     try {
-      const data = await new JellyfinApi(this.client).browse(current?.Id, this.search.value.trim(), startIndex, abort.signal);
+      const data = await this.browseApi.browse(current?.Id, this.search.value.trim(), startIndex, abort.signal);
       if (abort.signal.aborted || !this.sidebar) return;
       if (!startIndex) this.results.replaceChildren();
       const items = (data.Items || []).filter(item => item.IsFolder || item.MediaType === 'Video');
@@ -248,9 +409,11 @@ export class Multiview {
     const inside = this.root.contains(event.target);
     if (event.key === 'Escape') {
       event.preventDefault(); event.stopImmediatePropagation();
-      this.sidebar ? this.closeBrowser() : this.close();
+      if (document.fullscreenElement) void document.exitFullscreen();
+      else if (this.layoutMenu) { this.closeLayouts(); this.layoutButton.focus(); }
+      else this.sidebar ? this.closeBrowser() : this.close();
     } else if (event.key === 'Tab') {
-      const controls = [...this.root.querySelectorAll('button:not(:disabled), input')];
+      const controls = this.focusable();
       if (!controls.length) return;
       const index = controls.indexOf(document.activeElement);
       if (event.shiftKey && index <= 0) { event.preventDefault(); controls.at(-1).focus(); }
@@ -261,12 +424,18 @@ export class Multiview {
       // The root listener runs after target handlers (e.g. geometry arrow keys).
     }
   }
+  focusable() {
+    return [...this.root.querySelectorAll('button:not(:disabled), input:not(:disabled)')].filter(node => node.getClientRects().length > 0);
+  }
   pollGamepad() {
     if (this.closed) return;
-    const pad = navigator.getGamepads?.().find(p => p?.connected);
+    let pad;
+    try { pad = navigator.getGamepads?.().find(p => p?.connected); } catch { return; }
+    if (!pad) { this.previousButtons = []; return; }
     const pressed = pad?.buttons.map(b => b.pressed) || [];
     const rising = index => pressed[index] && !this.previousButtons?.[index];
-    const controls = [...this.root.querySelectorAll('button:not(:disabled), input')];
+    if (!pressed.some((value, i) => value && !this.previousButtons?.[i])) { this.previousButtons = pressed; return; }
+    const controls = this.focusable();
     if (rising(0)) document.activeElement?.click();
     if (rising(1)) this.sidebar ? this.closeBrowser() : this.close();
     if ([12, 13, 14, 15].some(rising) && controls.length) {
@@ -275,13 +444,17 @@ export class Multiview {
       controls[(index + step + controls.length) % controls.length].focus();
     }
     this.previousButtons = pressed;
-    if (!this.closed) this.gamepadFrame = requestAnimationFrame(() => this.pollGamepad());
+
   }
   close() {
     if (this.closed) return;
     this.closed = true;
     this.closeBrowser();
-    cancelAnimationFrame(this.gamepadFrame);
+    clearInterval(this.gamepadTimer);
+    clearInterval(this.monitor);
+    cancelAnimationFrame(this.paintFrame);
+    document.removeEventListener('fullscreenchange', this.onFullscreen);
+    if (this.ownsFullscreen && document.fullscreenElement === this.container) void document.exitFullscreen().catch(() => {});
     this.resize.disconnect();
     document.removeEventListener('keydown', this.onKey, true);
     window.removeEventListener('hashchange', this.onRoute);
@@ -289,7 +462,10 @@ export class Multiview {
     window.removeEventListener('pagehide', this.onUnload);
     this.original.removeEventListener('ended', this.onEnded);
     this.original.removeEventListener('emptied', this.onEnded);
-    this.tiles.forEach(tile => { if (!tile.original) void tile.player?.stop(); });
+    this.tiles.forEach(tile => {
+      for (const [event, handler] of tile.listeners) tile.video.removeEventListener(event, handler);
+      if (!tile.original) void tile.player?.stop();
+    });
     this.original.classList.remove('mv-original-video');
     this.container.classList.remove('mv-active');
     if (this.originalStyle === null) this.original.removeAttribute('style'); else this.original.setAttribute('style', this.originalStyle);
@@ -322,5 +498,5 @@ if (!window.JellyfinMultiview) {
   document.addEventListener('loadedmetadata', refresh, true);
   document.addEventListener('emptied', refresh, true);
   refresh();
-  window.JellyfinMultiview = { version: '0.1.0', close: () => active?.close() };
+  window.JellyfinMultiview = { version: '0.2.0', close: () => active?.close(), diagnostics: () => active?.tiles.map(t => ({ name: t.name, ...t.sample })), paintCount: () => active?.paintCount };
 }

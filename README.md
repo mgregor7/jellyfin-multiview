@@ -12,7 +12,7 @@ https://github.com/mgregor7/jellyfin-multiview/releases/latest/download/manifest
 
 Open the catalog, install **Multiview**, and restart Jellyfin. Remove or disable the old localhost repository if its helper is no longer running. A server older than **12.1.0.0** will filter this build out of the catalog.
 
-**The web integration is also required.** Download `jellyfin-multiview-0.1.0.zip` from [Releases](https://github.com/mgregor7/jellyfin-multiview/releases/latest), extract it, and run from that directory:
+**The web integration is also required.** Download `jellyfin-multiview-0.2.0.zip` from [Releases](https://github.com/mgregor7/jellyfin-multiview/releases/latest), extract it, and run from that directory:
 
 ```sh
 node scripts/install-web.mjs /actual/path/to/jellyfin-web
@@ -27,6 +27,11 @@ Start a library video normally, select **Multiview**, and use **+ Add stream** t
 - **3:** two upper panes (44% height), one full-width lower pane (56%).
 - **4:** 2 × 2 grid.
 - **5–9:** balanced rows; incomplete last rows expand to fill their width.
+- **Auto layout** opens presets: sports, equal windows, main left 50/50, main top 50/50, side by side, and over/under. Select a pane's star to make it the main window. The 50/50 split allocates screen space; video fitting keeps the actual picture undistorted inside that space.
+- Window dimensions fit each video's intrinsic aspect ratio by default; toggle **Fit windows to video** in the layout picker to fill allocation cells instead.
+- Every pane, including the original, has play/pause, ±10-second seek, timeline, latest available position and volume controls. Rewind/seek requires a seekable buffer from the source; it cannot create a DVR buffer that the provider does not offer.
+- **Hide toolbar** makes more room; **Show toolbar** brings it back. **Fullscreen** expands the existing player container without moving video nodes.
+- **Diagnostics** shows playback state, buffer and decoded/dropped frame counts. See [the performance investigation](docs/PERFORMANCE.md) for findings and limitations.
 - Drag the ↔ handle to move a pane, or ↘ to resize it. Focus a handle and use arrows; Shift + arrows also resizes. **Auto layout** restores the layout.
 - **Listen** selects one audio source; selecting the audible pane again mutes all. Added streams start muted.
 - **Exit multiview** stops added streams and restores the original player's styling and mute setting. Escape closes the sidebar first, then exits multiview.
@@ -42,11 +47,15 @@ Geometry changes do not assign stream URLs, recreate videos, seek, pause, or res
 | Jellyfin Xbox app | Candidate when it loads the modified server web client and uses HTML video. Basic gamepad controls are included (D-pad focus, A activate, B back). Console memory/decoder limits and host gamepad interactions are unverified. |
 | Roku Jellyfin app | **Not implemented.** It cannot load this web script. A Roku client change and a separately designed video composition solution are needed; this DLL cannot provide the requested Roku UI by itself. |
 
-Native/external players that do not expose Jellyfin Web's `.videoPlayerContainer video` are not supported. The current integration intentionally targets the normal HTML video player. Native video-only fullscreen, subtitle rendering in multiview, synchronized playback, and Live TV channel browsing are outside this first version. The sidebar targets **videos in libraries**, including scraper `.strm` entries negotiated through Jellyfin.
+Native/external players that do not expose Jellyfin Web's `.videoPlayerContainer video` are not supported. The current integration intentionally targets the normal HTML video player. Native video-only fullscreen (as distinct from the supported whole-multiview fullscreen), subtitle rendering in multiview, synchronized playback, and Live TV channel browsing are outside this first version. The sidebar targets **videos in libraries**, including scraper `.strm` entries negotiated through Jellyfin.
+
+## Upgrade from 0.1.0
+
+If your mounted `index.html` loads `../Multiview/Client.js`, update the plugin in Jellyfin, restart, and hard-refresh Chrome. Keep the existing Compose mount. If you copied a static `multiview.js` into the web directory, rerun the installer from the new ZIP as well.
 
 ## Files ready for later installation
 
-`artifacts/jellyfin-multiview-0.1.0.zip` contains:
+`artifacts/jellyfin-multiview-0.2.0.zip` contains:
 
 - `plugin/Jellyfin.Plugin.Multiview.dll` — server plugin, compiled for .NET 10 / Jellyfin 12.1.
 - `dist/multiview.js` — self-contained client script, including HLS playback and styles. No runtime CDN dependency.
