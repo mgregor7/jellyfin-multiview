@@ -3,7 +3,10 @@
 <script>
 window.ApiClient = {
   getCurrentUserId: () => 'viewer', deviceId: () => 'browser', accessToken: () => 'test-token',
-  getUrl: (path, query = {}) => new URL('/jellyfin/' + path.replace(/^\//, ''), location.origin).href + (Object.keys(query).length ? '?' + new URLSearchParams(query) : '')
+  getUrl: (path, query = {}) => {
+    if (!path) throw new Error('Url name cannot be empty');
+    return new URL('/jellyfin/' + path.replace(/^\//, ''), location.origin).href + (Object.keys(query).length ? '?' + new URLSearchParams(query) : '');
+  }
 };
 const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 360;
 const context = canvas.getContext('2d'); let frame = 0;

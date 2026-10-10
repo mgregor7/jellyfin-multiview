@@ -1,6 +1,17 @@
 import Hls from 'hls.js';
 import { deviceProfile } from './api.js';
 
+export function playbackFailure(error, hls = false) {
+  if (hls) {
+    // Do not include raw URLs, response bodies or exception messages: they can contain tokens.
+    const detail = String(error?.details || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+    const status = Number(error?.response?.code);
+    return `HLS playback failed (${detail}${Number.isInteger(status) && status > 0 ? `; HTTP ${status}` : ''}).`;
+  }
+  const reasons = { 1: 'playback aborted', 2: 'network request failed', 3: 'video decoding failed', 4: 'source unavailable or unsupported format' };
+  return `Stream failed (${reasons[error?.code] || 'unknown media error'}; media code ${Number(error?.code) || 0}).`;
+}
+
 export class StreamPlayer {
   constructor(api, item, video, onStatus) {
     Object.assign(this, { api, item, video, onStatus });
@@ -74,7 +85,7 @@ export class StreamPlayer {
       this.listen('pause', () => { if (this.started && !this.closed) void this.report('/Progress'); });
       this.listen('waiting', () => this.onStatus('Buffering…'));
       this.listen('error', () => {
-        this.onStatus('Stream failed. Remove it and try adding it again.');
+        this.onStatus(playbackFailure(this.video.error));
         void this.stop();
       });
       this.listen('ended', () => { this.onStatus('Stream ended'); void this.stop(); });
@@ -88,7 +99,7 @@ export class StreamPlayer {
         });
         this.hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
-            this.onStatus('Stream failed. Remove it and try adding it again.');
+            this.onStatus(playbackFailure(data, true));
             void this.stop();
           }
         });

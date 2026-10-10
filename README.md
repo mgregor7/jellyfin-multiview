@@ -12,7 +12,7 @@ https://github.com/mgregor7/jellyfin-multiview/releases/latest/download/manifest
 
 Open the catalog, install **Multiview**, and restart Jellyfin. Remove or disable the old localhost repository if its helper is no longer running. A server older than **12.1.0.0** will filter this build out of the catalog.
 
-**The web integration is also required.** Download `jellyfin-multiview-0.2.0.zip` from [Releases](https://github.com/mgregor7/jellyfin-multiview/releases/latest), extract it, and run from that directory:
+**The web integration is also required.** Download `jellyfin-multiview-0.2.1.zip` from [Releases](https://github.com/mgregor7/jellyfin-multiview/releases/latest), extract it, and run from that directory:
 
 ```sh
 node scripts/install-web.mjs /actual/path/to/jellyfin-web
@@ -55,7 +55,7 @@ If your mounted `index.html` loads `../Multiview/Client.js`, update the plugin i
 
 ## Files ready for later installation
 
-`artifacts/jellyfin-multiview-0.2.0.zip` contains:
+`artifacts/jellyfin-multiview-0.2.1.zip` contains:
 
 - `plugin/Jellyfin.Plugin.Multiview.dll` — server plugin, compiled for .NET 10 / Jellyfin 12.1.
 - `dist/multiview.js` — self-contained client script, including HLS playback and styles. No runtime CDN dependency.

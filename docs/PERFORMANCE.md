@@ -28,3 +28,9 @@ The toolbar diagnostic text contains no stream URLs or access tokens. Server/pro
 ## Regression coverage
 
 Tests exercise an already-playing original video without replacing its node/source; independent transport controls; preset changes; viewport fitting; fullscreen/collapse; primary playback with three secondary decoded videos for ten seconds past setup; bounded idle geometry work; and same-server HLS manifest/segment authorization. Unit checks distinguish stalls from intentional pauses and clamp seeking to actual DVR ranges.
+
+## Added HLS streams failing in 0.2.0 (fixed in 0.2.1)
+
+A user HAR showed successful PlaybackInfo negotiation followed by cleanup with no secondary playlist request. The HLS request setup called `isServerUrl`, which called `ApiClient.getUrl` with an empty path. Jellyfin Web 12.1 uses jellyfin-apiclient 1.11.0, whose implementation rejects empty paths with `Url name cannot be empty`. The exception prevented the XHR from being sent.
+
+The origin comparison now builds a nonempty `System/Info/Public` URL without fetching it. Unit and browser fixtures enforce the real client restriction; the pre-fix unit check fails and the corrected check passes. This explains the added-stream startup regression, not the separate original-stream freeze previously reported. The private HAR is excluded from source control.

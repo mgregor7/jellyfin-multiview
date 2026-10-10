@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { JellyfinApi, randomId } from '../web/src/api.js';
 const client = {
   getCurrentUserId: () => 'user1', deviceId: () => 'main', accessToken: () => 'secret',
-  getUrl: (path, query) => `https://example.test/jellyfin/${path}?${new URLSearchParams(query)}`
+  getUrl: (path, query) => {
+    if (!path) throw new Error('Url name cannot be empty');
+    return `https://example.test/jellyfin/${path}?${new URLSearchParams(query)}`;
+  }
 };
 test('library browsing preserves the server prefix and uses the signed-in user', async () => {
   let captured;

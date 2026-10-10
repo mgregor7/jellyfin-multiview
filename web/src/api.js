@@ -22,7 +22,7 @@ export class JellyfinApi {
   authorization() {
     const quote = value => encodeURIComponent(String(value));
     // Preserve the original app metadata to avoid repeatedly rewriting the shared token's device record.
-    return `MediaBrowser Client="${quote(this.client.appName?.() || 'Multiview')}", Device="${quote(this.client.deviceName?.() || 'Web')}", DeviceId="${quote(this.deviceId)}", Version="${quote(this.client.appVersion?.() || '0.2.0')}", Token="${quote(this.client.accessToken())}"`;
+    return `MediaBrowser Client="${quote(this.client.appName?.() || 'Multiview')}", Device="${quote(this.client.deviceName?.() || 'Web')}", DeviceId="${quote(this.deviceId)}", Version="${quote(this.client.appVersion?.() || '0.2.1')}", Token="${quote(this.client.accessToken())}"`;
   }
   mediaUrl(path, query = {}) {
     const url = new URL(this.url(path, query), globalThis.location?.href);
@@ -32,7 +32,8 @@ export class JellyfinApi {
     return url.href;
   }
   isServerUrl(url) {
-    return new URL(url, globalThis.location?.href).origin === new URL(this.url(''), globalThis.location?.href).origin;
+    // Jellyfin's ApiClient rejects an empty path. This builds a URL only; no request is sent.
+    return new URL(url, globalThis.location?.href).origin === new URL(this.url('System/Info/Public'), globalThis.location?.href).origin;
   }
   async request(path, { method = 'GET', query, body, signal, keepalive = false } = {}) {
     const response = await this.fetcher(this.url(path, query), {

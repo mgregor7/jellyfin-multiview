@@ -1,4 +1,5 @@
 node_modules/
+*.har
 dist/
 server/bin/
 server/obj/

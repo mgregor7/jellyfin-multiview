@@ -10,7 +10,7 @@ if (!directory || args.some(arg => arg.startsWith('--') && arg !== '--uninstall'
   process.exit(1);
 }
 const index = join(resolve(directory), 'index.html');
-const marker = '<script defer src="multiview.js" data-jellyfin-multiview="0.2.0"></script>';
+const marker = '<script defer src="multiview.js" data-jellyfin-multiview="0.2.1"></script>';
 const pattern = /<script\b[^>]*\bdata-jellyfin-multiview="[^"]*"[^>]*><\/script>\s*/g;
 const html = await readFile(index, 'utf8');
 if (uninstall) {

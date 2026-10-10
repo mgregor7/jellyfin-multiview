@@ -17,8 +17,8 @@ class GithubPackageTests(unittest.TestCase):
             output = Path(temporary)
             module.prepare('example/multiview', ROOT / 'artifacts/jellyfin-multiview-local-repo.zip', output)
             version = json.loads((output / 'manifest.json').read_text())[0]['versions'][0]
-            self.assertEqual(version['sourceUrl'], 'https://github.com/example/multiview/releases/download/v0.2.0.0/multiview_0.2.0.0.zip')
-            self.assertEqual(hashlib.md5((output / 'multiview_0.2.0.0.zip').read_bytes()).hexdigest(), version['checksum'])
+            self.assertEqual(version['sourceUrl'], 'https://github.com/example/multiview/releases/download/v0.2.1.0/multiview_0.2.1.0.zip')
+            self.assertEqual(hashlib.md5((output / 'multiview_0.2.1.0.zip').read_bytes()).hexdigest(), version['checksum'])
             self.assertEqual(version['targetAbi'], '12.1.0.0')
 
     def test_invalid_repository_rejected(self):

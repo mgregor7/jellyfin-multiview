@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { StreamPlayer } from '../web/src/player.js';
+import { StreamPlayer, playbackFailure } from '../web/src/player.js';
+
+test('playback errors distinguish network, decoder and HLS HTTP failures without exposing tokens', () => {
+  assert.match(playbackFailure({ code: 2 }), /network request failed/);
+  assert.match(playbackFailure({ code: 3 }), /video decoding failed/);
+  assert.match(playbackFailure({ code: 4 }), /unsupported format/);
+  const message = playbackFailure({ details: 'manifestLoadError', response: { code: 401, url: 'https://private/?ApiKey=secret', text: 'secret' }, error: new Error('secret') }, true);
+  assert.equal(message, 'HLS playback failed (manifestLoadError; HTTP 401).');
+  assert.doesNotMatch(message, /secret|private/);
+});
 
 test('pending progress reports are coalesced and stopped still follows them', async () => {
   const calls = [];
