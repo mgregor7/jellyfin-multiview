@@ -35,4 +35,14 @@
 .mv-collapsed .mv-sidebar{top:34px}
 .mv-diagnostics{position:absolute;bottom:40px;right:12px;z-index:8;max-width:min(440px,90vw);max-height:60%;overflow:auto;background:#0c1425ee;border:1px solid #536078;border-radius:8px;padding:14px;font:12px/1.5 monospace;white-space:pre-wrap;pointer-events:auto}
 .videoPlayerContainer.mv-active:fullscreen{width:100vw!important;height:100vh!important}
+/* Keep player boxes fixed while chrome fades after two seconds outside the pane. */
+.mv-tile{animation:mv-hide-frame 2.2s linear forwards}
+.mv-original-tile{pointer-events:auto}
+.mv-tile-heading,.mv-controls,.mv-resize{animation:mv-hide-controls 2.2s linear forwards}
+.mv-tile:hover,.mv-tile:has(:focus-visible){animation:none}
+.mv-tile:hover .mv-tile-heading,.mv-tile:hover .mv-controls,.mv-tile:hover .mv-resize,
+.mv-tile:has(:focus-visible) .mv-tile-heading,.mv-tile:has(:focus-visible) .mv-controls,.mv-tile:has(:focus-visible) .mv-resize{animation:none}
+@keyframes mv-hide-controls{0%,90.9%{opacity:1}100%{opacity:0}}
+@keyframes mv-hide-frame{0%,90.9%{border-color:#485268}100%{border-color:transparent;background-color:transparent}}
+@media(prefers-reduced-motion:reduce){.mv-tile,.mv-tile-heading,.mv-controls,.mv-resize{animation-timing-function:step-end}}
 @media(max-width:900px){.mv-toolbar strong,.mv-counter{display:none}.mv-toolbar{flex-wrap:wrap;align-content:center}.mv-toolbar .mv-button{font-size:11px;padding:6px}.mv-tile-heading .mv-button{font-size:10px;padding:3px}.mv-title{font-size:11px}}

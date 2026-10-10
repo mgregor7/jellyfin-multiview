@@ -137,3 +137,5 @@ See [GitHub publishing instructions](docs/GITHUB-REPOSITORY.md) for the included
 **Publish Jellyfin plugin** workflow. It publishes a downloadable manifest and
 plugin package so Jellyfin can install from a public GitHub URL instead of
 localhost. The repository URL becomes usable only after a release is published.
+
+Pane borders and controls hide two seconds after the pointer leaves. Hover over a pane or focus its controls with the keyboard to reveal them. Video position and size stay fixed during the transition.

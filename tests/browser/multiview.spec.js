@@ -275,3 +275,28 @@ test('HLS manifests and segments carry the pane device identity without touching
   expect(headers.every(h => /DeviceId="browser-multiview-/.test(h))).toBe(true);
   expect(await page.evaluate(() => playbackEvents)).toEqual([]);
 });
+
+test('pane chrome hides after pointer leaves and reveals on hover or keyboard focus without moving video', async ({ page }) => {
+  await fixture(page);
+  await page.getByRole('button', { name: '▦ Multiview' }).click();
+  await add(page, 0);
+  await page.mouse.move(0, 0);
+  const tiles = page.locator('.mv-tile');
+  const before = await page.locator('video').evaluateAll(v => v.map(n => ({ src: n.src, rect: n.getBoundingClientRect().toJSON() })));
+  await expect(tiles.first().locator('.mv-controls')).toHaveCSS('opacity', '0');
+  await expect(tiles.nth(1).locator('.mv-tile-heading')).toHaveCSS('opacity', '0');
+  await expect(tiles.first()).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
+  for (let i = 0; i < 2; i++) {
+    await tiles.nth(i).hover();
+    await expect(tiles.nth(i).locator('.mv-controls')).toHaveCSS('opacity', '1');
+    await expect(tiles.nth(i).locator('.mv-resize')).toHaveCSS('opacity', '1');
+    await page.mouse.move(0, 0);
+    await expect(tiles.nth(i).locator('.mv-controls')).toHaveCSS('opacity', '1');
+    await expect(tiles.nth(i).locator('.mv-controls')).toHaveCSS('opacity', '0');
+  }
+  await page.keyboard.press('Tab');
+  await tiles.first().locator('.mv-move').focus();
+  await expect(tiles.first().locator('.mv-controls')).toHaveCSS('opacity', '1');
+  expect(await page.locator('video').evaluateAll(v => v.map(n => ({ src: n.src, rect: n.getBoundingClientRect().toJSON() })))).toEqual(before);
+  expect(await page.evaluate(() => playbackEvents)).toEqual([]);
+});
