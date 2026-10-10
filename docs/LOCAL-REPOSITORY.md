@@ -1,6 +1,6 @@
 # Install through a repository on your host
 
-Copy **jellyfin-multiview-local-repo.zip** to the Jellyfin host and extract it into a dedicated directory. This is the transfer bundle; the inner `multiview_0.2.2.0.zip` is the package Jellyfin downloads. Do not add either ZIP's path as a repository URL.
+Copy **jellyfin-multiview-local-repo.zip** to the Jellyfin host and extract it into a dedicated directory. This is the transfer bundle; the inner `multiview_0.2.3.0.zip` is the package Jellyfin downloads. Do not add either ZIP's path as a repository URL.
 
 ## Jellyfin installed directly on the host (or Docker host networking)
 
@@ -17,7 +17,7 @@ In Jellyfin:
 1. Open **Dashboard → Plugins → Repositories** and add a repository.
 2. Name: **Local Multiview**.
 3. URL: **http://127.0.0.1:8765/manifest.json**.
-4. Save, open the plugin catalog, select **Multiview 0.2.2.0**, and install.
+4. Save, open the plugin catalog, select **Multiview 0.2.3.0**, and install.
 5. Restart Jellyfin and verify Multiview appears under installed plugins.
 
 The plugin targets Jellyfin **12.1**. Leave the helper running during installation and future catalog/update checks. You may stop it afterward, but disable the repository in Jellyfin while it is offline to avoid failed repository checks. Port 8765 is separate from Jellyfin's usual port 8096; Jellyfin does not automatically serve arbitrary files copied onto its host.

@@ -12,7 +12,7 @@ https://github.com/mgregor7/jellyfin-multiview/releases/latest/download/manifest
 
 Open the catalog, install **Multiview**, and restart Jellyfin. Remove or disable the old localhost repository if its helper is no longer running. A server older than **12.1.0.0** will filter this build out of the catalog.
 
-**The web integration is also required.** Download `jellyfin-multiview-0.2.2.zip` from [Releases](https://github.com/mgregor7/jellyfin-multiview/releases/latest), extract it, and run from that directory:
+**The web integration is also required.** Download `jellyfin-multiview-0.2.3.zip` from [Releases](https://github.com/mgregor7/jellyfin-multiview/releases/latest), extract it, and run from that directory:
 
 ```sh
 node scripts/install-web.mjs /actual/path/to/jellyfin-web
@@ -55,7 +55,7 @@ If your mounted `index.html` loads `../Multiview/Client.js`, update the plugin i
 
 ## Files ready for later installation
 
-`artifacts/jellyfin-multiview-0.2.2.zip` contains:
+`artifacts/jellyfin-multiview-0.2.3.zip` contains:
 
 - `plugin/Jellyfin.Plugin.Multiview.dll` — server plugin, compiled for .NET 10 / Jellyfin 12.1.
 - `dist/multiview.js` — self-contained client script, including HLS playback and styles. No runtime CDN dependency.
@@ -141,3 +141,16 @@ localhost. The repository URL becomes usable only after a release is published.
 Pane borders and controls hide two seconds after the pointer leaves. Hover over a pane or focus its controls with the keyboard to reveal them. Video position and size stay fixed during the transition.
 
 Hovering a pane brings it in front of overlapping panes; it stays in front until another pane is hovered.
+
+### Xbox controller trial
+
+Start with Jellyfin in Xbox Edge. The native Xbox app's embedded webview still requires hardware validation. Controller input is browser-tested using simulated gamepads; simultaneous playback capacity depends on the console.
+
+- D-pad / left stick: navigate controls (hold to repeat).
+- A: activate; B: close the current menu, library, fullscreen, then multiview.
+- LB / RB: previous / next stream; focus brings that pane forward.
+- X: play/pause the selected stream; Y: open the library.
+- Focus a slider and press left/right to adjust volume or seek.
+- Focus a move/resize handle and press A to adjust with the D-pad/stick; A or B finishes.
+
+The Multiview launch button appears with Jellyfin's native playback buttons and hides with them.

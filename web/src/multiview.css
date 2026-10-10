@@ -46,3 +46,8 @@
 @keyframes mv-hide-frame{0%,90.9%{border-color:#485268}100%{border-color:transparent;background-color:transparent}}
 @media(prefers-reduced-motion:reduce){.mv-tile,.mv-tile-heading,.mv-controls,.mv-resize{animation-timing-function:step-end}}
 @media(max-width:900px){.mv-toolbar strong,.mv-counter{display:none}.mv-toolbar{flex-wrap:wrap;align-content:center}.mv-toolbar .mv-button{font-size:11px;padding:6px}.mv-tile-heading .mv-button{font-size:10px;padding:3px}.mv-title{font-size:11px}}
+.mv-launch.mv-launch-native{position:static;z-index:auto;font:inherit;margin:0 6px;padding:8px 12px}
+.mv-launch:not(.mv-launch-native){transition:opacity .2s}
+.mv-launch-idle:not(.mv-launch-native):not(:hover):not(:focus){opacity:0;pointer-events:none}
+.mv-controller-focus.mv-button,.mv-controller-focus:is(input){outline:3px solid #59dcff;outline-offset:2px}
+.mv-tile.mv-controller-focus,.mv-tile.mv-controller-focus .mv-tile-heading,.mv-tile.mv-controller-focus .mv-controls,.mv-tile.mv-controller-focus .mv-resize{animation:none}

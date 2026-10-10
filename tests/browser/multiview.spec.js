@@ -329,3 +329,78 @@ test('hover raises overlapping panes persistently including the original video w
   expect(await page.evaluate(() => playbackEvents)).toEqual([]);
   expect(requests.filter(r => r.path.endsWith('/PlaybackInfo'))).toHaveLength(1);
 });
+
+test('Xbox controller navigates panes, controls playback and scopes navigation to the library', async ({ page }) => {
+  await fixture(page);
+  await page.getByRole('button', { name: '▦ Multiview' }).click();
+  await add(page, 0);
+  await page.evaluate(() => {
+    window.testPad = { connected: true, buttons: Array.from({ length: 17 }, () => ({ pressed: false })), axes: [0, 0] };
+    Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: () => [testPad] });
+  });
+  const press = async index => {
+    await page.evaluate(i => { testPad.buttons[i].pressed = true; }, index);
+    await page.waitForTimeout(160);
+    await page.evaluate(i => { testPad.buttons[i].pressed = false; }, index);
+    await page.waitForTimeout(160);
+  };
+  await press(5);
+  const pane = await page.evaluate(() => document.activeElement.closest('.mv-tile')?.querySelector('.mv-title').textContent);
+  expect(pane).toBeTruthy();
+  await expect(page.locator('.mv-tile.mv-controller-focus .mv-controls')).toHaveCSS('opacity', '1');
+  await press(2);
+  const paused = await page.evaluate(() => document.activeElement.closest('.mv-tile').classList.contains('mv-original-tile') ? original.paused : document.activeElement.closest('.mv-tile').querySelector('video').paused);
+  expect(paused).toBe(true);
+  await press(2);
+  const selected = page.locator('.mv-tile.mv-controller-focus');
+  await selected.locator('.mv-volume').fill('0.3');
+  await selected.locator('.mv-volume').focus();
+  await press(15);
+  await expect(selected.locator('.mv-volume')).toHaveValue('0.35');
+  // Stacked panes initially fill the allocation width; shrink before moving sideways.
+  await selected.locator('.mv-resize').focus();
+  await press(0);
+  await press(14);
+  await press(1);
+  await selected.locator('.mv-move').focus();
+  const left = await selected.evaluate(n => n.offsetLeft);
+  await press(0);
+  await press(15);
+  expect(await selected.evaluate(n => n.offsetLeft)).toBeGreaterThan(left);
+  await press(1);
+  await expect(page.locator('.mv-root')).toBeVisible();
+  await press(3);
+  await expect(page.locator('.mv-sidebar')).toBeVisible();
+  await press(13);
+  expect(await page.evaluate(() => !!document.activeElement.closest('.mv-sidebar'))).toBe(true);
+  await press(1);
+  await expect(page.locator('.mv-sidebar')).toHaveCount(0);
+  await page.evaluate(() => { testPad.axes[0] = 1; });
+  await page.waitForTimeout(160);
+  await page.evaluate(() => { testPad.axes[0] = 0; });
+  expect(await page.evaluate(() => document.activeElement.getAttribute('aria-label'))).toBe('Auto layout');
+  await page.waitForTimeout(160);
+  await press(0);
+  await expect(page.locator('.mv-layout-menu')).toBeVisible();
+  await press(1);
+  await expect(page.locator('.mv-layout-menu')).toHaveCount(0);
+  await expect(page.locator('.mv-root')).toBeVisible();
+});
+
+test('launch button follows the native OSD row visibility', async ({ page }) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const osd = document.createElement('div'); osd.id = 'videoOsdPage';
+    osd.innerHTML = '<div class="videoOsdBottom-maincontrols"><div class="buttons"></div></div>';
+    document.body.append(osd);
+  });
+  const launch = page.locator('#videoOsdPage .mv-launch');
+  await expect(launch).toBeVisible();
+  await page.locator('.videoOsdBottom-maincontrols').evaluate(n => { n.hidden = true; });
+  await expect(launch).toBeHidden();
+  await page.locator('.videoOsdBottom-maincontrols').evaluate(n => { n.hidden = false; });
+  await expect(launch).toBeVisible();
+  await launch.click();
+  await expect(page.locator('.mv-root')).toBeVisible();
+  expect(await page.evaluate(() => playbackEvents)).toEqual([]);
+});

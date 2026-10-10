@@ -3,6 +3,7 @@ import { JellyfinApi } from './api.js';
 import { StreamPlayer } from './player.js';
 import css from './multiview.css';
 import { PRESETS } from './layout.js';
+import { directionalTarget, padDirection } from './controller.js';
 import { seekRanges, seekTarget, playbackSample } from './media.js';
 
 const MAX_STREAMS = 9;
@@ -84,6 +85,9 @@ export class Multiview {
       this.paint();
     };
     document.addEventListener('fullscreenchange', this.onFullscreen);
+    // Do not reuse the held A press that opened Multiview as another activation.
+    try { this.previousButtons = navigator.getGamepads?.().find(p => p?.connected)?.buttons.map(b => b.pressed) || []; }
+    catch { this.previousButtons = []; }
     this.gamepadTimer = setInterval(() => this.pollGamepad(), 120);
     this.monitor = setInterval(() => this.updatePlayback(), 1000);
   }
@@ -189,6 +193,7 @@ export class Multiview {
     const audio = button(original && !video.muted ? 'Audio on' : 'Listen', () => this.listen(tile));
     const tile = { video, node, heading, original, audio, name, listeners: [] };
     node.addEventListener('pointerenter', () => this.raiseTile(tile));
+    node.addEventListener('focusin', () => this.raiseTile(tile));
     if (!this.mainTile) this.mainTile = tile;
     tile.main = button('★', () => {
       this.mainTile = tile;
@@ -427,6 +432,12 @@ export class Multiview {
   key(event) {
     // Keep Jellyfin's global playback hotkeys from pausing the original during browsing.
     const inside = this.root.contains(event.target);
+    const direction = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[event.key];
+    if (inside && direction && !event.target.matches('input, .mv-move, .mv-resize')) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      this.navigateController(direction);
+      return;
+    }
     if (event.key === 'Escape') {
       event.preventDefault(); event.stopImmediatePropagation();
       if (document.fullscreenElement) void document.exitFullscreen();
@@ -445,23 +456,71 @@ export class Multiview {
     }
   }
   focusable() {
-    return [...this.root.querySelectorAll('button:not(:disabled), input:not(:disabled)')].filter(node => node.getClientRects().length > 0);
+    const scope = this.sidebar || this.layoutMenu || this.root;
+    return [...scope.querySelectorAll('button:not(:disabled), input:not(:disabled)')].filter(node => node.getClientRects().length > 0);
+  }
+  focusController(node) {
+    if (!node) return;
+    this.root.querySelectorAll('.mv-controller-focus').forEach(n => n.classList.remove('mv-controller-focus'));
+    node.classList.add('mv-controller-focus');
+    node.closest('.mv-tile')?.classList.add('mv-controller-focus');
+    node.focus({ preventScroll: true });
+    node.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  navigateController(direction) {
+    const current = document.activeElement;
+    if (this.geometryControl?.isConnected) {
+      this.geometryControl.dispatchEvent(new KeyboardEvent('keydown', { key: { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: 'ArrowDown' }[direction], bubbles: true }));
+      return;
+    }
+    if (this.focusable().includes(current) && current.matches('input[type=range]') && ['left', 'right'].includes(direction)) {
+      const step = current.classList.contains('mv-seek') ? 10 : Number(current.step);
+      current.value = String(Math.max(Number(current.min), Math.min(Number(current.max), Number(current.value) + (direction === 'left' ? -step : step))));
+      current.dispatchEvent(new Event('input', { bubbles: true }));
+      current.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+    this.focusController(directionalTarget(this.focusable(), current, direction));
+  }
+  controllerBack() {
+    if (this.geometryControl) { this.geometryControl = null; this.say('Move/resize finished.'); }
+    else if (this.layoutMenu) { this.closeLayouts(); this.focusController(this.layoutButton); }
+    else if (this.sidebar) this.closeBrowser();
+    else if (document.fullscreenElement) void document.exitFullscreen();
+    else this.close();
   }
   pollGamepad() {
     if (this.closed) return;
     let pad;
     try { pad = navigator.getGamepads?.().find(p => p?.connected); } catch { return; }
-    if (!pad) { this.previousButtons = []; return; }
+    if (!pad) { this.previousButtons = []; this.padDirection = null; return; }
     const pressed = pad?.buttons.map(b => b.pressed) || [];
     const rising = index => pressed[index] && !this.previousButtons?.[index];
-    if (!pressed.some((value, i) => value && !this.previousButtons?.[i])) { this.previousButtons = pressed; return; }
-    const controls = this.focusable();
-    if (rising(0)) document.activeElement?.click();
-    if (rising(1)) this.sidebar ? this.closeBrowser() : this.close();
-    if ([12, 13, 14, 15].some(rising) && controls.length) {
-      const step = rising(12) || rising(14) ? -1 : 1;
-      const index = Math.max(0, controls.indexOf(document.activeElement));
-      controls[(index + step + controls.length) % controls.length].focus();
+    const direction = padDirection(pad), now = performance.now();
+    if (direction && (direction !== this.padDirection || now >= this.padRepeatAt)) {
+      this.navigateController(direction);
+      this.padRepeatAt = now + (direction !== this.padDirection ? 400 : 160);
+    }
+    this.padDirection = direction;
+    if (rising(0)) {
+      const target = document.activeElement;
+      if (this.focusable().includes(target)) {
+        if (target.matches('.mv-move, .mv-resize')) {
+          this.geometryControl = this.geometryControl === target ? null : target;
+          this.say(this.geometryControl ? 'D-pad/stick to move or resize. A or B to finish.' : 'Move/resize finished.');
+        } else target.click();
+      } else this.focusController(this.focusable()[0]);
+    }
+    if (rising(1)) this.controllerBack();
+    if (!this.closed && !this.sidebar && !this.layoutMenu) {
+      const selected = this.tiles.find(t => t.node.contains(document.activeElement)) || this.layerOrder.at(-1);
+      if (rising(2) && selected) void this.togglePlay(selected);
+      if (rising(3)) { this.geometryControl = null; this.openBrowser(); }
+      if (rising(4) || rising(5)) {
+        this.geometryControl = null;
+        const index = this.tiles.indexOf(selected), step = rising(4) ? -1 : 1;
+        this.focusController(this.tiles[(index + step + this.tiles.length) % this.tiles.length].play);
+      }
     }
     this.previousButtons = pressed;
 
@@ -506,17 +565,35 @@ if (!window.JellyfinMultiview) {
     launch.hidden = true;
   });
   launch.classList.add('mv-launch');
+  launch.title = 'Multiview';
+  launch.addEventListener('click', event => event.stopPropagation());
   launch.hidden = true;
   document.body.append(launch);
+  let idleTimer;
+  const showLaunch = () => {
+    if (launch.classList.contains('mv-launch-native')) return;
+    launch.classList.remove('mv-launch-idle');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => launch.classList.add('mv-launch-idle'), 3000);
+  };
+  document.addEventListener('pointermove', showLaunch, { passive: true });
+  document.addEventListener('keydown', showLaunch);
+  launch.addEventListener('focus', showLaunch);
   const refresh = () => {
     const video = document.querySelector('.videoPlayerContainer video:not(.mv-video)');
     if (active && !active.closed && (!active.original.isConnected || !window.ApiClient?.accessToken())) active.close();
     launch.hidden = !!(active && !active.closed) || !video || video.readyState < 1 || !window.ApiClient?.accessToken();
+    const nativeRow = document.querySelector('#videoOsdPage:not(.hide) .videoOsdBottom-maincontrols .buttons');
+    const parent = nativeRow || document.body;
+    if (launch.parentNode !== parent) parent.append(launch);
+    launch.classList.toggle('mv-launch-native', !!nativeRow);
+    launch.classList.toggle('paper-icon-button-light', !!nativeRow);
   };
   const observer = new MutationObserver(refresh);
   observer.observe(document.body, { childList: true, subtree: true });
   document.addEventListener('loadedmetadata', refresh, true);
   document.addEventListener('emptied', refresh, true);
   refresh();
-  window.JellyfinMultiview = { version: '0.2.2', close: () => active?.close(), diagnostics: () => active?.tiles.map(t => ({ name: t.name, ...t.sample })), paintCount: () => active?.paintCount };
+  showLaunch();
+  window.JellyfinMultiview = { version: '0.2.3', close: () => active?.close(), diagnostics: () => active?.tiles.map(t => ({ name: t.name, ...t.sample })), paintCount: () => active?.paintCount };
 }
