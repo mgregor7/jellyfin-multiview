@@ -300,3 +300,32 @@ test('pane chrome hides after pointer leaves and reveals on hover or keyboard fo
   expect(await page.locator('video').evaluateAll(v => v.map(n => ({ src: n.src, rect: n.getBoundingClientRect().toJSON() })))).toEqual(before);
   expect(await page.evaluate(() => playbackEvents)).toEqual([]);
 });
+
+test('hover raises overlapping panes persistently including the original video without restarting players', async ({ page }) => {
+  const requests = await fixture(page);
+  await page.getByRole('button', { name: '▦ Multiview' }).click();
+  await add(page, 0);
+  await page.waitForTimeout(100);
+  await page.evaluate(() => {
+    window.layerVideos = [...document.querySelectorAll('video')];
+    window.layerSources = layerVideos.map(v => v.src);
+    window.layerParent = original.parentNode;
+    document.querySelectorAll('.mv-tile').forEach((tile, i) => Object.assign(tile.style, { left: `${20 + 120 * i}px`, top: '20px', width: '450px', height: '350px' }));
+  });
+  const stage = await page.locator('.mv-stage').boundingBox();
+  const topAtOverlap = () => page.evaluate(({ x, y }) => document.elementFromPoint(x + 200, y + 100)?.closest('.mv-tile')?.classList.contains('mv-original-tile'), stage);
+  await page.mouse.move(stage.x + 40, stage.y + 100);
+  expect(await topAtOverlap()).toBe(true);
+  const primaryZ = await page.evaluate(() => Number(getComputedStyle(original).zIndex));
+  const secondaryZ = await page.locator('.mv-tile').nth(1).evaluate(n => Number(getComputedStyle(n).zIndex));
+  expect(primaryZ).toBeGreaterThan(secondaryZ);
+  await page.mouse.move(0, 0);
+  expect(await topAtOverlap()).toBe(true);
+  await page.mouse.move(stage.x + 560, stage.y + 100);
+  expect(await topAtOverlap()).toBe(false);
+  await page.mouse.move(0, 0);
+  expect(await topAtOverlap()).toBe(false);
+  expect(await page.evaluate(() => original.parentNode === layerParent && layerVideos.every((v, i) => v === document.querySelectorAll('video')[i] && v.src === layerSources[i]))).toBe(true);
+  expect(await page.evaluate(() => playbackEvents)).toEqual([]);
+  expect(requests.filter(r => r.path.endsWith('/PlaybackInfo'))).toHaveLength(1);
+});

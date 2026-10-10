@@ -19,7 +19,7 @@ for path in files.values():
         raise SystemExit(f'Missing {path}; build the web bundle and DLL first.')
 if files['plugin/Jellyfin.Plugin.Multiview.dll'].stat().st_mtime < files['dist/multiview.js'].stat().st_mtime:
     raise SystemExit('Web bundle is newer than DLL; rebuild the server project before packaging.')
-output = root / 'artifacts/jellyfin-multiview-0.2.1.zip'
+output = root / 'artifacts/jellyfin-multiview-0.2.2.zip'
 output.parent.mkdir(exist_ok=True)
 with ZipFile(output, 'w', ZIP_DEFLATED) as archive:
     for target, path in files.items():

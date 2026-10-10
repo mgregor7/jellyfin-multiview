@@ -26,6 +26,7 @@ export class Multiview {
     this.client = client;
     this.container = video.closest('.videoPlayerContainer');
     this.tiles = [];
+    this.layerOrder = [];
     this.pending = new Set();
     this.closed = false;
     this.preset = 'sports';
@@ -187,6 +188,7 @@ export class Multiview {
     heading.append(title);
     const audio = button(original && !video.muted ? 'Audio on' : 'Listen', () => this.listen(tile));
     const tile = { video, node, heading, original, audio, name, listeners: [] };
+    node.addEventListener('pointerenter', () => this.raiseTile(tile));
     if (!this.mainTile) this.mainTile = tile;
     tile.main = button('★', () => {
       this.mainTile = tile;
@@ -231,11 +233,27 @@ export class Multiview {
     watch('resize', () => this.paint());
     this.stage.append(node);
     this.tiles.push(tile);
+    this.layerOrder.unshift(tile);
+    this.updateLayers();
     this.bindGeometry(tile, move, false);
     this.bindGeometry(tile, resize, true);
     this.updateControls(tile);
     this.arrange();
     return tile;
+  }
+  raiseTile(tile) {
+    if (this.layerOrder.at(-1) === tile) return;
+    this.layerOrder = this.layerOrder.filter(entry => entry !== tile);
+    this.layerOrder.push(tile);
+    this.updateLayers();
+  }
+  updateLayers() {
+    this.layerOrder.forEach((tile, index) => {
+      const layer = 2 + index * 2;
+      tile.node.style.zIndex = String(layer + 1);
+      // The primary video stays in its existing DOM location, just below its controls.
+      if (tile.original) tile.video.style.setProperty('z-index', String(layer), 'important');
+    });
   }
   bindGeometry(tile, handle, resizing) {
     handle.addEventListener('pointerdown', event => {
@@ -313,6 +331,8 @@ export class Multiview {
     for (const [event, handler] of tile.listeners) tile.video.removeEventListener(event, handler);
     tile.node.remove();
     this.tiles = this.tiles.filter(t => t !== tile);
+    this.layerOrder = this.layerOrder.filter(t => t !== tile);
+    this.updateLayers();
     if (this.mainTile === tile) {
       this.mainTile = this.tiles[0];
       this.mainTile.main.setAttribute('aria-pressed', 'true');
@@ -498,5 +518,5 @@ if (!window.JellyfinMultiview) {
   document.addEventListener('loadedmetadata', refresh, true);
   document.addEventListener('emptied', refresh, true);
   refresh();
-  window.JellyfinMultiview = { version: '0.2.1', close: () => active?.close(), diagnostics: () => active?.tiles.map(t => ({ name: t.name, ...t.sample })), paintCount: () => active?.paintCount };
+  window.JellyfinMultiview = { version: '0.2.2', close: () => active?.close(), diagnostics: () => active?.tiles.map(t => ({ name: t.name, ...t.sample })), paintCount: () => active?.paintCount };
 }
