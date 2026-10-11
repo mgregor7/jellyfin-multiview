@@ -51,3 +51,5 @@
 .mv-launch-idle:not(.mv-launch-native):not(:hover):not(:focus){opacity:0;pointer-events:none}
 .mv-controller-focus.mv-button,.mv-controller-focus:is(input){outline:3px solid #59dcff;outline-offset:2px}
 .mv-tile.mv-controller-focus,.mv-tile.mv-controller-focus .mv-tile-heading,.mv-tile.mv-controller-focus .mv-controls,.mv-tile.mv-controller-focus .mv-resize{animation:none}
+.mv-standalone{position:fixed;inset:0;z-index:2147000001;background:#090d14;overflow:hidden}
+.mv-standalone:fullscreen{width:100vw;height:100vh}

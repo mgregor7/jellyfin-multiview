@@ -1,9 +1,9 @@
-Multiview 0.2.3 for Jellyfin Server/Web 12.1.
+Multiview 0.2.4 for Jellyfin Server/Web 12.1.
 
-Adds controller navigation for Xbox testing: D-pad/left stick navigates controls, A activates, B backs out of menus/library/fullscreen/multiview, LB/RB cycles panes, X toggles selected-pane playback, and Y opens the library. Left/right adjusts focused volume and seek sliders. On move/resize handles, A enters adjustment mode; directional input adjusts geometry and A/B finishes. Focus raises the pane and keeps its controls visible. Library and layout menus restrict directional navigation to their own controls.
+The initial stream now has a Remove button. Removing it leaves other streams running. If it ends while other panes exist, it is removed automatically and the remaining panes continue. Multiview moves into an independent container before Jellyfin's original player is stopped, so native player teardown and its route changes do not close the remaining panes. Only the original device session receives the stop command; a cleanup warning appears if this cannot be confirmed.
 
-The Multiview launch button now joins Jellyfin's native playback button row and inherits its visibility. A standalone fallback fades after three idle seconds and reveals on pointer or keyboard activity.
+Removing the last pane exits multiview. Removing the main pane selects a remaining pane as main; active audio transfers to that pane when necessary.
 
-Validated with browser tests and simulated gamepad input. Xbox console and embedded-webview playback compatibility still require physical-device testing. This release does not resolve the separately reported original-stream stall.
+Current Chrome uses a state-preserving DOM move to preserve active players. Older browsers without this API use reattachment and resume, which may briefly interrupt playback. Xbox embedded-browser behavior still requires hardware validation.
 
-Update the plugin, restart Jellyfin, and hard-refresh the browser. Existing ../Multiview/Client.js loaders need no Compose changes.
+Update the plugin, restart Jellyfin, and reload the client. Existing ../Multiview/Client.js loaders need no Compose changes. This release does not claim to resolve the separately reported buffered original-stream stall.

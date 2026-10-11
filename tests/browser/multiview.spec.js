@@ -404,3 +404,39 @@ test('launch button follows the native OSD row visibility', async ({ page }) => 
   await expect(page.locator('.mv-root')).toBeVisible();
   expect(await page.evaluate(() => playbackEvents)).toEqual([]);
 });
+
+for (const trigger of ['remove', 'ended']) {
+  test(`initial stream ${trigger} preserves remaining players through host teardown`, async ({ page }) => {
+    const requests = await fixture(page);
+    await page.route('**/jellyfin/Sessions?*', route => route.fulfill({ json: [{ Id: 'original-session', DeviceId: 'browser' }, { Id: 'other-session', DeviceId: 'other-device' }] }));
+    await page.getByRole('button', { name: '▦ Multiview' }).click();
+    await add(page, 0); await add(page, 1);
+    await expect.poll(() => page.locator('.mv-video').evaluateAll(videos => videos.every(v => !v.paused && v.readyState >= 3 && v.currentTime > .1))).toBe(true);
+    await page.evaluate(() => {
+      window.retained = [...document.querySelectorAll('.mv-video')];
+      window.retainedSources = retained.map(v => v.src);
+      window.retainedEvents = [];
+      retained.forEach(v => ['pause', 'emptied', 'loadstart'].forEach(event => v.addEventListener(event, () => retainedEvents.push(event))));
+      window.beforeRemovalFrames = retained.map(v => v.getVideoPlaybackQuality().totalVideoFrames);
+    });
+    if (trigger === 'remove') await page.getByRole('button', { name: 'Remove Current stream', exact: true }).click();
+    else await page.evaluate(() => original.dispatchEvent(new Event('ended')));
+    await expect(page.locator('.mv-original-tile')).toHaveCount(0);
+    await expect(page.locator('.mv-standalone .mv-tile')).toHaveCount(2);
+    await expect.poll(() => requests.some(r => r.path === '/jellyfin/Sessions/original-session/Playing/Stop')).toBe(true);
+    await page.evaluate(() => {
+      original.closest('.videoPlayerContainer').remove();
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    await page.waitForTimeout(500);
+    expect(await page.evaluate(() => retained.map((v, i) => ({ same: v === document.querySelectorAll('.mv-video')[i], source: v.src === retainedSources[i], paused: v.paused, advanced: v.getVideoPlaybackQuality().totalVideoFrames > beforeRemovalFrames[i], events: retainedEvents })))).toEqual([{ same: true, source: true, paused: false, advanced: true, events: [] }, { same: true, source: true, paused: false, advanced: true, events: [] }]);
+    expect(await page.evaluate(() => retainedEvents)).toEqual([]);
+    expect(requests.filter(r => r.path.endsWith('/PlaybackInfo'))).toHaveLength(2);
+    expect(requests.filter(r => r.path.endsWith('/Playing/Stopped'))).toHaveLength(0);
+    await page.getByRole('button', { name: 'Remove Sport 0', exact: true }).click();
+    await expect(page.locator('.mv-tile')).toHaveCount(1);
+    await page.getByRole('button', { name: 'Remove Sport 1', exact: true }).click();
+    await expect(page.locator('.mv-root')).toHaveCount(0);
+    await expect(page.locator('.mv-standalone')).toHaveCount(0);
+  });
+}
