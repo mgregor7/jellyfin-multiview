@@ -4,7 +4,8 @@ import { StreamPlayer } from './player.js';
 import css from './multiview.css';
 import { PRESETS } from './layout.js';
 import { directionalTarget, padDirection } from './controller.js';
-import { seekRanges, seekTarget, playbackSample } from './media.js';
+import { exitAllFullscreen } from './fullscreen.js';
+import { seekRanges, seekTarget, playbackSample, needsRestart } from './media.js';
 
 const MAX_STREAMS = 9;
 const el = (tag, className, text) => {
@@ -65,7 +66,8 @@ export class Multiview {
     this.container.classList.add('mv-active');
     this.container.append(this.root);
     video.classList.add('mv-original-video');
-    this.addTile(video, 'Current stream', true);
+    const originalTile = this.addTile(video, document.querySelector('#videoOsdPage .osdTitle')?.textContent.trim() || 'Current stream', true);
+    void this.identifyOriginal(originalTile);
     this.resize = new ResizeObserver(() => this.paint());
     this.resize.observe(this.stage);
     this.onKey = event => this.key(event);
@@ -95,6 +97,7 @@ export class Multiview {
       this.paint();
     };
     document.addEventListener('fullscreenchange', this.onFullscreen);
+    this.onFullscreen();
     // Do not reuse the held A press that opened Multiview as another activation.
     try { this.previousButtons = navigator.getGamepads?.().find(p => p?.connected)?.buttons.map(b => b.pressed) || []; }
     catch { this.previousButtons = []; }
@@ -102,6 +105,20 @@ export class Multiview {
     this.monitor = setInterval(() => this.updatePlayback(), 1000);
   }
   say(message) { if (this.notice.textContent !== message) this.notice.textContent = message; }
+  async identifyOriginal(tile) {
+    try {
+      const sessions = await this.browseApi.request('Sessions', { query: { DeviceId: this.client.deviceId() }, signal: AbortSignal.timeout(10000) });
+      const session = Array.isArray(sessions) && sessions.find(s => s.DeviceId === this.client.deviceId());
+      if (!session?.NowPlayingItem?.Id || !this.tiles.includes(tile) || this.originalRemoved) return;
+      tile.item = session.NowPlayingItem;
+      if (tile.item.Name) {
+        const oldName = tile.name;
+        tile.name = tile.item.Name;
+        tile.title.textContent = tile.name;
+        tile.node.querySelectorAll('[aria-label]').forEach(node => node.setAttribute('aria-label', node.getAttribute('aria-label').replace(oldName, tile.name)));
+      }
+    } catch { /* The visible Jellyfin title remains available if session lookup fails. */ }
+  }
   setCollapsed(collapsed) {
     this.root.classList.toggle('mv-collapsed', collapsed);
     this.toolbar.hidden = collapsed;
@@ -111,15 +128,19 @@ export class Multiview {
     this.paint();
   }
   async toggleFullscreen() {
+    if (this.fullscreenBusy) return;
+    this.fullscreenBusy = true;
+    this.fullscreenButton.disabled = true;
     try {
-      if (document.fullscreenElement) await document.exitFullscreen();
+      if (document.fullscreenElement) await exitAllFullscreen();
       else {
         if (!this.container.requestFullscreen) throw new Error('Fullscreen is not available in this browser.');
         // Fullscreen the existing parent: the original video is never moved.
         await this.container.requestFullscreen();
         this.ownsFullscreen = true;
       }
-    } catch (error) { this.say(error.message || 'Unable to enter fullscreen.'); }
+    } catch (error) { this.say(error.message || 'Unable to change fullscreen.'); }
+    finally { this.fullscreenBusy = false; this.fullscreenButton.disabled = false; this.onFullscreen(); }
   }
   toggleLayouts() {
     if (this.layoutMenu) { this.closeLayouts(); return; }
@@ -159,6 +180,9 @@ export class Multiview {
     for (const tile of this.tiles) {
       tile.sample = playbackSample(tile.video, tile.sample);
       this.updateControls(tile);
+      const now = performance.now();
+      tile.bufferingSince = !tile.video.paused && (tile.video.readyState < 3 || tile.video.seeking) ? (tile.bufferingSince ?? now) : null;
+      tile.restart.hidden = tile.restarting || !(tile.restartFailed || needsRestart(tile.video, tile.sample, tile.player, tile.connectingSince, now, tile.bufferingSince));
       if (tile.original && tile.sample.state === 'Stalled') {
         tile.status.textContent = tile.sample.buffer < .1 ? 'No buffered data. Check stream/server connection.' : 'Playback stalled with buffered data. See Diagnostics.';
       } else if (tile.original && tile.sample.state === 'Playing') tile.status.textContent = '';
@@ -201,7 +225,7 @@ export class Multiview {
     const title = el('span', 'mv-title', name);
     heading.append(title);
     const audio = button(original && !video.muted ? 'Audio on' : 'Listen', () => this.listen(tile));
-    const tile = { video, node, heading, original, audio, name, listeners: [] };
+    const tile = { video, node, heading, title, original, audio, name, listeners: [] };
     node.addEventListener('pointerenter', () => this.raiseTile(tile));
     node.addEventListener('focusin', () => this.raiseTile(tile));
     if (!this.mainTile) this.mainTile = tile;
@@ -215,6 +239,9 @@ export class Multiview {
     const status = el('div', 'mv-status');
     status.setAttribute('role', 'status');
     tile.status = status;
+    tile.restart = button('↻ Restart stream', () => { void this.restartTile(tile); }, `Restart ${name}`);
+    tile.restart.classList.add('mv-restart');
+    tile.restart.hidden = true;
     heading.append(audio);
     heading.append(button('×', () => this.remove(tile), `Remove ${name}`));
     if (!original) {
@@ -229,23 +256,20 @@ export class Multiview {
     const controls = el('div', 'mv-controls');
     const row = el('div', 'mv-control-row');
     tile.play = button(video.paused ? 'Play' : 'Pause', () => this.togglePlay(tile));
-    tile.back = button('−10s', () => this.seek(tile, video.currentTime - 10), `Rewind ${name} 10 seconds`);
-    tile.forward = button('+10s', () => this.seek(tile, video.currentTime + 10), `Forward ${name} 10 seconds`);
-    tile.latest = button('Latest', () => this.seek(tile, seekRanges(video).at(-1)?.end), `Jump ${name} to latest available position`);
+    tile.back = button('−10s', () => this.seek(tile, tile.video.currentTime - 10), `Rewind ${name} 10 seconds`);
+    tile.forward = button('+10s', () => this.seek(tile, tile.video.currentTime + 10), `Forward ${name} 10 seconds`);
+    tile.latest = button('Latest', () => this.seek(tile, seekRanges(tile.video).at(-1)?.end), `Jump ${name} to latest available position`);
     tile.volume = el('input', 'mv-volume'); tile.volume.type = 'range';
     tile.volume.min = '0'; tile.volume.max = '1'; tile.volume.step = '.05';
     tile.volume.setAttribute('aria-label', `Volume ${name}`);
-    tile.volume.addEventListener('input', () => { video.volume = Number(tile.volume.value); });
+    tile.volume.addEventListener('input', () => { tile.video.volume = Number(tile.volume.value); });
     tile.seek = el('input', 'mv-seek'); tile.seek.type = 'range'; tile.seek.step = '.1';
     tile.seek.setAttribute('aria-label', `Seek ${name}`);
     tile.seek.addEventListener('change', () => this.seek(tile, Number(tile.seek.value)));
     row.append(tile.play, tile.back, tile.forward, tile.latest, tile.volume);
     controls.append(row, tile.seek);
-    node.append(heading, controls, status, resize);
-    const watch = (event, handler) => { video.addEventListener(event, handler); tile.listeners.push([event, handler]); };
-    for (const event of ['play', 'pause', 'volumechange', 'durationchange', 'progress']) watch(event, () => this.updateControls(tile));
-    watch('loadedmetadata', () => { this.updateControls(tile); this.paint(); });
-    watch('resize', () => this.paint());
+    node.append(heading, controls, status, resize, tile.restart);
+    this.watchTileVideo(tile);
     this.stage.append(node);
     this.tiles.push(tile);
     this.layerOrder.unshift(tile);
@@ -255,6 +279,70 @@ export class Multiview {
     this.updateControls(tile);
     this.arrange();
     return tile;
+  }
+  watchTileVideo(tile) {
+    const watch = (event, handler) => { tile.video.addEventListener(event, handler); tile.listeners.push([event, handler]); };
+    for (const event of ['play', 'pause', 'volumechange', 'durationchange', 'progress']) watch(event, () => this.updateControls(tile));
+    watch('loadedmetadata', () => { this.updateControls(tile); this.paint(); });
+    watch('resize', () => this.paint());
+    watch('error', () => { tile.restart.hidden = false; });
+  }
+  async restartTile(tile) {
+    if (tile.restarting || !this.tiles.includes(tile)) return;
+    tile.restarting = true;
+    tile.restartFailed = false;
+    const attempt = tile.restartAttempt = (tile.restartAttempt || 0) + 1;
+    tile.restart.hidden = true;
+    const muted = tile.video.muted, volume = tile.video.volume;
+    try {
+      if (!tile.item?.Id && tile.original) await this.identifyOriginal(tile);
+      if (!tile.item?.Id) throw new Error('Unable to identify this stream. Try Restart again once Jellyfin has updated its playback session.');
+      tile.status.textContent = 'Restarting…';
+      if (tile.original) {
+        this.originalRemoved = true;
+        this.detachFromOriginal();
+        this.original.pause(); this.original.muted = true;
+        this.original.style.setProperty('display', 'none', 'important');
+        for (const [event, handler] of tile.listeners) tile.video.removeEventListener(event, handler);
+        tile.listeners = [];
+        tile.original = false;
+        tile.node.classList.remove('mv-original-tile');
+        tile.video = el('video', 'mv-video'); tile.video.playsInline = true;
+        tile.node.prepend(tile.video);
+        this.watchTileVideo(tile);
+        await this.stopOriginalSession();
+      } else await tile.player?.stop();
+      if (this.closed || !this.tiles.includes(tile)) return;
+      tile.sample = null;
+      tile.bufferingSince = null;
+      tile.connectingSince = performance.now();
+      tile.player = this.createPlayer(tile);
+      this.paint();
+      tile.restarting = false;
+      await tile.player.start();
+      if (!this.closed && this.tiles.includes(tile) && tile.restartAttempt === attempt) {
+        tile.video.volume = volume;
+        tile.video.muted = muted;
+        this.updateControls(tile);
+      }
+    } catch (error) {
+      if (tile.restartAttempt === attempt) {
+        tile.restartFailed = true;
+        tile.status.textContent = error.message;
+        tile.restart.hidden = false;
+      }
+    } finally {
+      if (tile.restartAttempt === attempt) {
+        tile.restarting = false;
+        if (tile.player?.failed) tile.restart.hidden = false;
+      }
+    }
+  }
+  createPlayer(tile) {
+    return new StreamPlayer(new JellyfinApi(this.client), tile.item, tile.video, message => {
+      tile.status.textContent = message;
+      if (tile.player?.failed && !tile.restarting) tile.restart.hidden = false;
+    });
   }
   raiseTile(tile) {
     if (this.layerOrder.at(-1) === tile) return;
@@ -385,10 +473,10 @@ export class Multiview {
   }
   async stopOriginalSession() {
     try {
-      const sessions = await this.browseApi.request('Sessions', { query: { DeviceId: this.client.deviceId() } });
+      const sessions = await this.browseApi.request('Sessions', { query: { DeviceId: this.client.deviceId() }, signal: AbortSignal.timeout(10000) });
       const session = sessions.find(s => s.DeviceId === this.client.deviceId());
       if (!session?.Id) throw new Error('Original playback session not found');
-      await this.browseApi.request(`Sessions/${encodeURIComponent(session.Id)}/Playing/Stop`, { method: 'POST' });
+      await this.browseApi.request(`Sessions/${encodeURIComponent(session.Id)}/Playing/Stop`, { method: 'POST', signal: AbortSignal.timeout(10000) });
     } catch {
       this.say('Initial stream paused and removed; Jellyfin session cleanup could not be confirmed.');
     }
@@ -404,7 +492,8 @@ export class Multiview {
     const tile = this.addTile(video, item.Name || 'Stream');
     tile.item = item;
     tile.status.textContent = 'Connecting…';
-    tile.player = new StreamPlayer(new JellyfinApi(this.client), item, video, message => { tile.status.textContent = message; });
+    tile.connectingSince = performance.now();
+    tile.player = this.createPlayer(tile);
     this.closeBrowser();
     try { await tile.player.start(); }
     finally { this.pending.delete(item.Id); }
@@ -644,5 +733,5 @@ if (!window.JellyfinMultiview) {
   document.addEventListener('emptied', refresh, true);
   refresh();
   showLaunch();
-  window.JellyfinMultiview = { version: '0.2.4', close: () => active?.close(), diagnostics: () => active?.tiles.map(t => ({ name: t.name, ...t.sample })), paintCount: () => active?.paintCount };
+  window.JellyfinMultiview = { version: '0.2.5', close: () => active?.close(), diagnostics: () => active?.tiles.map(t => ({ name: t.name, ...t.sample })), paintCount: () => active?.paintCount };
 }

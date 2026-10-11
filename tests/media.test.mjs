@@ -27,3 +27,14 @@ test('diagnostics distinguish a deliberate pause from a stalled stream', () => {
   video.paused = false; video.currentTime = 11; video.readyState = 4;
   assert.equal(playbackSample(video, first, 6000).state, 'Playing');
 });
+
+test('restart prompt waits fifteen seconds and excludes deliberate pauses', async () => {
+  const { needsRestart } = await import('../web/src/media.js');
+  const video = { paused: false, ended: false, seeking: false };
+  assert.equal(needsRestart(video, { lastAdvance: 0 }, null, 0, 14999), false);
+  assert.equal(needsRestart(video, { lastAdvance: 0 }, null, 0, 15000), true);
+  assert.equal(needsRestart({ ...video, paused: true }, { lastAdvance: 0 }, null, 0, 20000), false);
+  assert.equal(needsRestart(video, null, { failed: true }, 0, 0), true);
+  assert.equal(needsRestart(video, null, { started: false, closed: false }, 0, 15000), true);
+  assert.equal(needsRestart({ ...video, seeking: true }, { lastAdvance: 15000 }, null, 0, 15000, 0), true);
+});

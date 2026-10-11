@@ -1,9 +1,11 @@
-Multiview 0.2.4 for Jellyfin Server/Web 12.1.
+Multiview 0.2.5 for Jellyfin Server/Web 12.1.
 
-The initial stream now has a Remove button. Removing it leaves other streams running. If it ends while other panes exist, it is removed automatically and the remaining panes continue. Multiview moves into an independent container before Jellyfin's original player is stopped, so native player teardown and its route changes do not close the remaining panes. Only the original device session receives the stop command; a cleanup warning appears if this cannot be confirmed.
+The initial pane resolves its stream title and item identity from Jellyfin's playback session, with the native playback title as a fallback.
 
-Removing the last pane exits multiview. Removing the main pane selects a remaining pane as main; active audio transfers to that pane when necessary.
+A centered Restart stream button appears on playback errors or after fifteen seconds of stalled playback, prolonged buffering, or connection startup. Intentional pauses do not trigger it. Restart reconnects the selected stream in its existing pane, preserving layout and audio settings. It negotiates a fresh playback session; this is not a guaranteed resume at the prior playback position. Restarting the initial stream converts it to an independent multiview player. Other panes retain their players.
 
-Current Chrome uses a state-preserving DOM move to preserve active players. Older browsers without this API use reattachment and resume, which may briefly interrupt playback. Xbox embedded-browser behavior still requires hardware validation.
+Exit fullscreen now clears nested Jellyfin/multiview fullscreen layers, synchronizes the initial button label, and guards overlapping fullscreen requests.
 
-Update the plugin, restart Jellyfin, and reload the client. Existing ../Multiview/Client.js loaders need no Compose changes. This release does not claim to resolve the separately reported buffered original-stream stall.
+Browser tests cover initial titles, restarting initial and added streams independently, original-player teardown, and nested fullscreen exit. Xbox/native embedded-browser behavior still needs physical-device validation.
+
+Update the plugin, restart Jellyfin, and reload the client. Existing ../Multiview/Client.js loaders need no Compose changes.

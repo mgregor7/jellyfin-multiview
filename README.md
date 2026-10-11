@@ -12,7 +12,7 @@ https://github.com/mgregor7/jellyfin-multiview/releases/latest/download/manifest
 
 Open the catalog, install **Multiview**, and restart Jellyfin. Remove or disable the old localhost repository if its helper is no longer running. A server older than **12.1.0.0** will filter this build out of the catalog.
 
-**The web integration is also required.** Download `jellyfin-multiview-0.2.4.zip` from [Releases](https://github.com/mgregor7/jellyfin-multiview/releases/latest), extract it, and run from that directory:
+**The web integration is also required.** Download `jellyfin-multiview-0.2.5.zip` from [Releases](https://github.com/mgregor7/jellyfin-multiview/releases/latest), extract it, and run from that directory:
 
 ```sh
 node scripts/install-web.mjs /actual/path/to/jellyfin-web
@@ -55,7 +55,7 @@ If your mounted `index.html` loads `../Multiview/Client.js`, update the plugin i
 
 ## Files ready for later installation
 
-`artifacts/jellyfin-multiview-0.2.4.zip` contains:
+`artifacts/jellyfin-multiview-0.2.5.zip` contains:
 
 - `plugin/Jellyfin.Plugin.Multiview.dll` — server plugin, compiled for .NET 10 / Jellyfin 12.1.
 - `dist/multiview.js` — self-contained client script, including HLS playback and styles. No runtime CDN dependency.
@@ -156,3 +156,5 @@ Start with Jellyfin in Xbox Edge. The native Xbox app's embedded webview still r
 The Multiview launch button appears with Jellyfin's native playback buttons and hides with them.
 
 The initial stream can be removed using its × button while the other panes keep playing. When the initial stream ends with other panes open, it is removed automatically. The last pane's removal exits multiview. After the original player closes, multiview remains open across Jellyfin's playback teardown/navigation until you exit it. Current Chrome preserves playback during the container transition; older browsers may briefly resume after reattachment.
+
+Stream failures and stalls lasting fifteen seconds show a centered **Restart stream** button. Restart reconnects only that pane using a fresh playback session and preserves layout, volume, and audio selection. It may restart from the source's default position rather than the prior timestamp. Deliberately paused streams do not show the stall prompt. The initial pane uses the title of its Jellyfin playback item.

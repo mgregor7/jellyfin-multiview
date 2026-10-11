@@ -85,6 +85,7 @@ export class StreamPlayer {
       this.listen('pause', () => { if (this.started && !this.closed) void this.report('/Progress'); });
       this.listen('waiting', () => this.onStatus('Buffering…'));
       this.listen('error', () => {
+        this.failed = true;
         this.onStatus(playbackFailure(this.video.error));
         void this.stop();
       });
@@ -99,6 +100,7 @@ export class StreamPlayer {
         });
         this.hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
+            this.failed = true;
             this.onStatus(playbackFailure(data, true));
             void this.stop();
           }
@@ -112,6 +114,7 @@ export class StreamPlayer {
       try { await this.video.play(); }
       catch { if (!this.closed) this.onStatus('Select Play to start this stream.'); }
     } catch (error) {
+      this.failed = true;
       if (!this.closed) this.onStatus(error.message);
       await this.stop();
     }
@@ -124,9 +127,13 @@ export class StreamPlayer {
     const results = await Promise.allSettled(jobs);
     if (results.some(r => r.status === 'rejected')) this.onStatus('Server stream cleanup could not be confirmed.');
   }
-  async stop() {
-    if (this.closed) return;
+  stop() {
+    if (this.stopPromise) return this.stopPromise;
     this.closed = true;
+    this.stopPromise = this.finishStop();
+    return this.stopPromise;
+  }
+  async finishStop() {
     clearInterval(this.timer);
     for (const [event, handler] of this.listeners) this.video.removeEventListener(event, handler);
     this.hls?.destroy();

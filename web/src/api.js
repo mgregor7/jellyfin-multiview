@@ -22,7 +22,7 @@ export class JellyfinApi {
   authorization() {
     const quote = value => encodeURIComponent(String(value));
     // Preserve the original app metadata to avoid repeatedly rewriting the shared token's device record.
-    return `MediaBrowser Client="${quote(this.client.appName?.() || 'Multiview')}", Device="${quote(this.client.deviceName?.() || 'Web')}", DeviceId="${quote(this.deviceId)}", Version="${quote(this.client.appVersion?.() || '0.2.4')}", Token="${quote(this.client.accessToken())}"`;
+    return `MediaBrowser Client="${quote(this.client.appName?.() || 'Multiview')}", Device="${quote(this.client.deviceName?.() || 'Web')}", DeviceId="${quote(this.deviceId)}", Version="${quote(this.client.appVersion?.() || '0.2.5')}", Token="${quote(this.client.accessToken())}"`;
   }
   mediaUrl(path, query = {}) {
     const url = new URL(this.url(path, query), globalThis.location?.href);

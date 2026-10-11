@@ -53,3 +53,4 @@
 .mv-tile.mv-controller-focus,.mv-tile.mv-controller-focus .mv-tile-heading,.mv-tile.mv-controller-focus .mv-controls,.mv-tile.mv-controller-focus .mv-resize{animation:none}
 .mv-standalone{position:fixed;inset:0;z-index:2147000001;background:#090d14;overflow:hidden}
 .mv-standalone:fullscreen{width:100vw;height:100vh}
+.mv-restart{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;pointer-events:auto;background:#125e79;box-shadow:0 2px 18px #0009;padding:12px 18px;white-space:nowrap}

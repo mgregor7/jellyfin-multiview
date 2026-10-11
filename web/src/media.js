@@ -32,3 +32,10 @@ export function playbackSample(video, previous, now = performance.now()) {
     state: video.error ? `Media error ${video.error.code}` : video.ended ? 'Ended' : video.paused ? 'Paused'
       : now - lastAdvance > 5000 ? 'Stalled' : video.readyState < 3 ? 'Buffering' : 'Playing' };
 }
+
+export function needsRestart(video, sample, player, connectingSince, now = performance.now(), bufferingSince = null) {
+  if (video.error || player?.failed) return true;
+  if (player && !player.started && !player.closed) return now - connectingSince >= 15000;
+  return !!(!video.paused && !video.ended && ((bufferingSince !== null && now - bufferingSince >= 15000)
+    || (!video.seeking && sample && now - sample.lastAdvance >= 15000)));
+}

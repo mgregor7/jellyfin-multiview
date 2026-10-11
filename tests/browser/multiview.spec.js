@@ -440,3 +440,55 @@ for (const trigger of ['remove', 'ended']) {
     await expect(page.locator('.mv-standalone')).toHaveCount(0);
   });
 }
+
+test('initial title resolves and restarting its failed player preserves the other pane', async ({ page }) => {
+  const requests = await fixture(page);
+  await page.route('**/jellyfin/Sessions?*', route => route.fulfill({ json: [{ Id: 'original-session', DeviceId: 'browser', NowPlayingItem: { Id: 'original-item', Name: 'Hockey Tonight' } }] }));
+  await page.getByRole('button', { name: '▦ Multiview' }).click();
+  await expect(page.locator('.mv-original-tile .mv-title')).toHaveText('Hockey Tonight');
+  await add(page, 0);
+  await expect.poll(() => page.locator('.mv-video').evaluate(v => !v.paused && v.currentTime > .1)).toBe(true);
+  await page.evaluate(() => {
+    window.survivor = document.querySelector('.mv-video'); window.survivorSrc = survivor.src;
+    window.survivorEvents = [];
+    ['pause', 'emptied', 'loadstart'].forEach(e => survivor.addEventListener(e, () => survivorEvents.push(e)));
+    Object.defineProperty(original, 'error', { configurable: true, value: { code: 3 } });
+    original.dispatchEvent(new Event('error'));
+  });
+  await page.getByRole('button', { name: 'Restart Hockey Tonight', exact: true }).click();
+  await expect.poll(() => requests.filter(r => r.path === '/jellyfin/Items/original-item/PlaybackInfo').length).toBe(1);
+  await expect.poll(() => page.locator('.mv-tile').first().locator('video').evaluate(v => !v.paused && v.readyState >= 3)).toBe(true);
+  expect(await page.evaluate(() => survivor.isConnected && survivor.src === survivorSrc && !survivor.paused)).toBe(true);
+  expect(await page.evaluate(() => survivorEvents)).toEqual([]);
+  await expect(page.locator('.mv-tile')).toHaveCount(2);
+  await expect(page.locator('.mv-tile').first().locator('.mv-title')).toHaveText('Hockey Tonight');
+});
+
+test('failed added stream restarts in place without restarting the original', async ({ page }) => {
+  const requests = await fixture(page);
+  await page.getByRole('button', { name: '▦ Multiview' }).click();
+  await add(page, 0);
+  await expect.poll(() => page.locator('.mv-video').evaluate(v => !v.paused && v.currentTime > .1)).toBe(true);
+  await page.evaluate(() => {
+    window.failedVideo = document.querySelector('.mv-video');
+    failedVideo.dispatchEvent(new Event('error'));
+  });
+  await page.getByRole('button', { name: 'Restart Sport 0', exact: true }).click();
+  await expect.poll(() => requests.filter(r => r.path.endsWith('/PlaybackInfo')).length).toBe(2);
+  await expect.poll(() => page.locator('.mv-video').evaluate(v => !v.paused && v.readyState >= 3)).toBe(true);
+  expect(await page.evaluate(() => failedVideo === document.querySelector('.mv-video'))).toBe(true);
+  expect(await page.evaluate(() => playbackEvents)).toEqual([]);
+  await expect(page.getByRole('button', { name: 'Restart Sport 0', exact: true })).toBeHidden();
+});
+
+test('exit fullscreen clears nested Jellyfin and multiview fullscreen layers', async ({ page }) => {
+  await fixture(page);
+  await page.getByRole('button', { name: '▦ Multiview' }).click();
+  await page.evaluate(() => document.documentElement.requestFullscreen());
+  // Each fullscreen request needs a fresh user activation.
+  await page.locator('.mv-toolbar strong').click();
+  await page.evaluate(() => document.querySelector('.videoPlayerContainer').requestFullscreen());
+  await page.getByRole('button', { name: 'Exit fullscreen', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBe(null);
+  await expect(page.getByRole('button', { name: 'Fullscreen', exact: true })).toBeVisible();
+});
