@@ -216,7 +216,7 @@ test('layout presets, main selection, aspect fit, collapsed toolbar and fullscre
   await page.waitForTimeout(100);
   const rects = await page.locator('.mv-tile').evaluateAll(nodes => nodes.map(n => ({ x: n.offsetLeft, w: n.clientWidth, h: n.clientHeight })));
   expect(rects[2].x).toBeLessThan(rects[0].x);
-  rects.forEach(r => expect(r.w / (r.h - 88)).toBeCloseTo(16 / 9, 1));
+  rects.forEach(r => expect((r.w - 2) / (r.h - 2)).toBeCloseTo(16 / 9, 1));
   await page.getByRole('button', { name: 'Fullscreen', exact: true }).click();
   await expect.poll(() => page.evaluate(() => document.fullscreenElement?.classList.contains('videoPlayerContainer'))).toBe(true);
   await page.getByRole('button', { name: 'Hide toolbar', exact: true }).click();
