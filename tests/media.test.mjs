@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seekTarget, playbackSample } from '../web/src/media.js';
-import { fitViewport, CHROME } from '../web/src/layout.js';
+import { fitViewport, FRAME } from '../web/src/layout.js';
 
 test('seek clamps within DVR ranges and avoids discontinuity gaps', () => {
   const ranges = [{ start: 100, end: 120 }, { start: 130, end: 150 }];
@@ -10,10 +10,10 @@ test('seek clamps within DVR ranges and avoids discontinuity gaps', () => {
   assert.equal(seekTarget(ranges, 128), 130);
   assert.equal(seekTarget([], 10), null);
 });
-test('fitted windows match the intrinsic video aspect without cropping or filling the row', () => {
+test('fitted windows maximize the video area and exclude only the frame', () => {
   for (const aspect of [16 / 9, 4 / 3, 9 / 16]) {
     const r = fitViewport({ x: 0, y: 0, w: 1, h: .5 }, 1400, 900, aspect);
-    assert.ok(Math.abs((r.w - 2) / (r.h - CHROME) - aspect) < .00001);
+    assert.ok(Math.abs((r.w - FRAME) / (r.h - FRAME) - aspect) < .00001);
     assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= 1400 && r.y + r.h <= 450);
   }
 });
