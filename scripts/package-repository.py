@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def build_repository():
-    source = ROOT / 'artifacts/jellyfin-multiview-0.2.5.zip'
-    plugin_name = 'multiview_0.2.5.0.zip'
+    source = ROOT / 'artifacts/jellyfin-multiview-0.2.6.zip'
+    plugin_name = 'multiview_0.2.6.0.zip'
     plugin_bytes = BytesIO()
     with ZipFile(source) as distribution:
         with ZipFile(plugin_bytes, 'w', ZIP_DEFLATED) as plugin:
@@ -28,8 +28,8 @@ def build_repository():
             'owner': 'Multiview',
             'category': 'General',
             'versions': [{
-                'version': '0.2.5.0',
-                'changelog': 'Individual controls, video aspect fitting, layout presets, fullscreen and playback diagnostics.',
+                'version': '0.2.6.0',
+                'changelog': 'Maximized automatic layouts and visible-boundary pane movement and resizing.',
                 'targetAbi': '12.1.0.0',
                 'sourceUrl': f'http://127.0.0.1:8765/{plugin_name}',
                 'checksum': hashlib.md5(payload).hexdigest(),
