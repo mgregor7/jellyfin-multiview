@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { layout, constrain } from '../web/src/layout.js';
+import { layout, constrain, fitViewport, rectFromViewport } from '../web/src/layout.js';
 
 test('two streams are stacked and three prioritize the bottom pane', () => {
   const two = layout(2);
@@ -28,6 +28,18 @@ test('layouts fill available space without overlapping for 2–9 players', () =>
 });
 test('dragged and resized panes stay in bounds', () => {
   assert.deepEqual(constrain({ x: -2, y: 2, w: 3, h: .01 }), { x: 0, y: .85, w: 1, h: .15 });
+});
+
+test('manual geometry starts from the visible fitted pane rather than its allocation cell', () => {
+  assert.deepEqual(rectFromViewport({ left: 250, top: 125, width: 500, height: 250 },
+    { left: 100, top: 50, width: 1000, height: 500 }), { x: .15, y: .15, w: .5, h: .5 });
+});
+
+test('four automatic streams are maximized and packed together', () => {
+  const panes = layout(4).map(cell => fitViewport(cell, 1264, 606, 16 / 9));
+  assert.ok(panes.every(pane => Math.abs((pane.w - 2) / (pane.h - 2) - 16 / 9) < 1e-10));
+  assert.ok(panes[1].x - (panes[0].x + panes[0].w) <= 2.000001);
+  assert.ok(panes[2].y - (panes[0].y + panes[0].h) <= 2.000001);
 });
 
 test('equal preset gives every window the same allocation at odd counts', () => {
