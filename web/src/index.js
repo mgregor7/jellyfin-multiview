@@ -1,4 +1,4 @@
-import { layout, constrain, fitViewport, HEADER, CHROME } from './layout.js';
+import { layout, constrain, fitViewport, rectFromViewport, FRAME } from './layout.js';
 import { JellyfinApi } from './api.js';
 import { StreamPlayer } from './player.js';
 import css from './multiview.css';
@@ -359,13 +359,22 @@ export class Multiview {
     });
   }
   bindGeometry(tile, handle, resizing) {
+    const makeEditable = bounds => {
+      if (!tile.automatic) return;
+      // Auto-layout cells can be larger than their aspect-fitted panes. Start
+      // manual movement from the box the user can actually see and grab.
+      const box = tile.node.getBoundingClientRect();
+      tile.rect = rectFromViewport(box, bounds);
+      tile.automatic = false;
+    };
     handle.addEventListener('pointerdown', event => {
       if (event.button !== 0) return;
       event.preventDefault();
       handle.focus();
       handle.setPointerCapture(event.pointerId);
-      const initial = { ...tile.rect }, x = event.clientX, y = event.clientY;
       const bounds = this.stage.getBoundingClientRect();
+      makeEditable(bounds);
+      const initial = { ...tile.rect }, x = event.clientX, y = event.clientY;
       const update = move => {
         const dx = (move.clientX - x) / bounds.width, dy = (move.clientY - y) / bounds.height;
         tile.rect = constrain(resizing ? { ...initial, w: initial.w + dx, h: initial.h + dy } : { ...initial, x: initial.x + dx, y: initial.y + dy });
@@ -386,6 +395,7 @@ export class Multiview {
       const offset = { ArrowLeft: [-.025, 0], ArrowRight: [.025, 0], ArrowUp: [0, -.025], ArrowDown: [0, .025] }[event.key];
       if (!offset) return;
       event.preventDefault(); event.stopPropagation();
+      makeEditable(this.stage.getBoundingClientRect());
       const [dx, dy] = offset, r = tile.rect;
       tile.rect = constrain(resizing || event.shiftKey ? { ...r, w: r.w + dx, h: r.h + dy } : { ...r, x: r.x + dx, y: r.y + dy });
       this.paint();
@@ -395,7 +405,7 @@ export class Multiview {
     const positions = layout(this.tiles.length, this.preset);
     const ordered = this.preset.startsWith('main-')
       ? [this.mainTile, ...this.tiles.filter(tile => tile !== this.mainTile)] : this.tiles;
-    ordered.forEach((tile, i) => { tile.rect = positions[i]; });
+    ordered.forEach((tile, i) => { tile.rect = positions[i]; tile.automatic = true; });
     this.counter.textContent = `${this.tiles.length} / ${MAX_STREAMS} streams`;
     this.paint();
   }
@@ -409,12 +419,15 @@ export class Multiview {
       this.tiles.forEach(tile => {
         if (!tile.rect) return;
         const aspect = tile.video.videoWidth && tile.video.videoHeight ? tile.video.videoWidth / tile.video.videoHeight : 16 / 9;
-        const g = fitViewport(tile.rect, bounds.width, bounds.height, aspect, this.snap);
+        const g = tile.automatic
+          ? fitViewport(tile.rect, bounds.width, bounds.height, aspect, this.snap)
+          : { x: tile.rect.x * bounds.width, y: tile.rect.y * bounds.height,
+            w: tile.rect.w * bounds.width, h: tile.rect.h * bounds.height };
         Object.assign(tile.node.style, { left: `${g.x}px`, top: `${g.y}px`, width: `${g.w}px`, height: `${g.h}px` });
         if (tile.original) {
           // Keep the original in its existing DOM location; only its CSS box changes.
-          for (const [key, value] of Object.entries({ left: bounds.left + g.x + 1,
-            top: bounds.top + g.y + HEADER + 1, width: g.w - 2, height: g.h - CHROME })) {
+          for (const [key, value] of Object.entries({ left: bounds.left + g.x + FRAME / 2,
+            top: bounds.top + g.y + FRAME / 2, width: g.w - FRAME, height: g.h - FRAME })) {
             tile.video.style.setProperty(key, `${Math.max(0, value)}px`, 'important');
           }
         }
@@ -733,5 +746,5 @@ if (!window.JellyfinMultiview) {
   document.addEventListener('emptied', refresh, true);
   refresh();
   showLaunch();
-  window.JellyfinMultiview = { version: '0.2.5', close: () => active?.close(), diagnostics: () => active?.tiles.map(t => ({ name: t.name, ...t.sample })), paintCount: () => active?.paintCount };
+  window.JellyfinMultiview = { version: '0.2.6', close: () => active?.close(), diagnostics: () => active?.tiles.map(t => ({ name: t.name, ...t.sample })), paintCount: () => active?.paintCount };
 }
