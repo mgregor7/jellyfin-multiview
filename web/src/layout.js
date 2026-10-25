@@ -46,18 +46,31 @@ export function constrain(rect) {
   return { x: Math.max(0, Math.min(1 - w, rect.x)), y: Math.max(0, Math.min(1 - h, rect.y)), w, h };
 }
 
-export const HEADER = 32;
-export const FOOTER = 56;
-export const CHROME = HEADER + FOOTER + 2;
+export const FRAME = 2;
 export function fitViewport(cell, width, height, aspect, snap = true) {
-  let w = Math.max(2, cell.w * width - 8);
-  let h = Math.max(CHROME + 1, cell.h * height - 8);
+  // The heading and transport controls overlay the picture. Only the border is
+  // outside the usable video area, so don't sacrifice 88px of every auto pane.
+  let w = Math.max(FRAME + 1, cell.w * width - 2);
+  let h = Math.max(FRAME + 1, cell.h * height - 2);
   if (snap && Number.isFinite(aspect) && aspect > 0) {
-    const mediaHeight = Math.max(1, h - CHROME);
-    const mediaWidth = Math.min(w - 2, mediaHeight * aspect);
-    w = Math.max(2, mediaWidth + 2);
-    h = Math.max(CHROME + 1, mediaWidth / aspect + CHROME);
+    const mediaWidth = Math.min(w - FRAME, (h - FRAME) * aspect);
+    w = Math.max(FRAME + 1, mediaWidth + FRAME);
+    h = Math.max(FRAME + 1, mediaWidth / aspect + FRAME);
   }
-  return { x: cell.x * width + (cell.w * width - w) / 2,
-    y: cell.y * height + (cell.h * height - h) / 2, w, h };
+  const align = (start, size, fitted, total) => {
+    const center = start + size / 2;
+    if (center < .5 - 1e-9) return (start + size) * total - fitted;
+    if (center > .5 + 1e-9) return start * total;
+    return start * total + (size * total - fitted) / 2;
+  };
+  // Pack fitted panes toward the middle instead of centering each one in its
+  // allocation. This leaves unused letterbox space at the outside edge rather
+  // than creating a large gutter between neighboring streams.
+  return { x: align(cell.x, cell.w, w, width), y: align(cell.y, cell.h, h, height), w, h };
+}
+
+export function rectFromViewport(box, bounds) {
+  return constrain({ x: (box.left - bounds.left) / bounds.width,
+    y: (box.top - bounds.top) / bounds.height,
+    w: box.width / bounds.width, h: box.height / bounds.height });
 }
