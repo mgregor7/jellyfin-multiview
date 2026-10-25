@@ -20,7 +20,7 @@ Open the catalog, install Multiview, and restart Jellyfin. **Then install the we
 - Manifest unreachable: a localhost repository is resolved by the server/container, not your browser. GitHub removes this localhost dependency, but the server still needs outbound HTTPS access.
 - Repository disabled, incorrect URL, no published release, or malformed manifest: check server logs when refreshing the catalog.
 
-The workflow publishes version `0.2.5.0` and refuses to overwrite an existing release. Before a subsequent release, update the project version and versioned package names together. The packaging scripts currently target this version explicitly.
+The workflow publishes version `0.2.6.0` and refuses to overwrite an existing release. Before a subsequent release, update the project version and versioned package names together. The packaging scripts currently target this version explicitly.
 
 For a local preparation without publishing:
 
