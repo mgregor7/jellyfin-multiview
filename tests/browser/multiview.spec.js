@@ -24,6 +24,10 @@ async function fixture(page, { delay = 0 } = {}) {
   await page.route('**/jellyfin/**', async route => {
     const request = route.request(), url = new URL(request.url());
     requests.push({ path: url.pathname, method: request.method(), body: request.postDataJSON(), query: Object.fromEntries(url.searchParams) });
+    if (url.pathname.includes('/Images/')) {
+      await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 9"><rect width="16" height="9" fill="#35627a"/></svg>' });
+      return;
+    }
     if (url.pathname.includes('/stream.')) {
       await route.fulfill({ status: 200, contentType: 'video/webm', body: media });
       return;
@@ -31,8 +35,8 @@ async function fixture(page, { delay = 0 } = {}) {
     let body = {};
     if (url.pathname.endsWith('/Items')) {
       body = url.searchParams.has('ParentId') || url.searchParams.has('SearchTerm') ? {
-        Items: Array.from({ length: 10 }, (_, i) => ({ Id: `sport-${i}`, Name: `Sport ${i}`, MediaType: 'Video' })), TotalRecordCount: 10
-      } : { Items: [{ Id: 'sports', Name: 'Sports', IsFolder: true }], TotalRecordCount: 1 };
+        Items: Array.from({ length: 10 }, (_, i) => ({ Id: `sport-${i}`, Name: `Sport ${i}`, Type: i % 2 ? 'Episode' : 'Video', MediaType: 'Video', ProductionYear: 2026, ImageTags: { Primary: `image-${i}` } })), TotalRecordCount: 10
+      } : { Items: [{ Id: 'sports', Name: 'Sports', IsFolder: true, ImageTags: { Primary: 'sports-image' } }], TotalRecordCount: 1 };
     } else if (url.pathname.endsWith('/PlaybackInfo')) {
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
       body = { PlaySessionId: `session-${requests.length}`, MediaSources: [{ Id: 'source', Container: 'mp4', SupportsDirectPlay: true, LiveStreamId: `live-${requests.length}` }] };
@@ -46,7 +50,8 @@ async function fixture(page, { delay = 0 } = {}) {
 }
 async function add(page, index) {
   await page.getByRole('button', { name: '+ Add stream' }).click();
-  await page.getByRole('button', { name: '▸ Sports' }).click();
+  const sports = page.getByRole('button', { name: '▸ Sports' });
+  if (await sports.count()) await sports.click();
   await page.getByRole('button', { name: `+ Sport ${index}`, exact: true }).click();
   await expect(page.locator('.mv-sidebar')).toHaveCount(0);
   await page.locator('.mv-video').evaluateAll(videos => videos.forEach(video => { video.loop = true; }));
@@ -130,6 +135,28 @@ test('search finds library videos and Escape closes sidebar before multiview', a
   await expect(page.locator('.mv-root')).toHaveCount(0);
 });
 
+test('library cards show authenticated artwork and Back clears search then moves up a folder', async ({ page }) => {
+  const requests = await fixture(page);
+  await page.getByRole('button', { name: '▦ Multiview' }).click();
+  await page.getByRole('button', { name: '+ Add stream' }).click();
+  await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeDisabled();
+  await expect(page.locator('.mv-library-image')).toHaveCount(1);
+  await page.getByRole('button', { name: '▸ Sports', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeEnabled();
+  await expect(page.locator('.mv-library-image')).toHaveCount(10);
+  const imageSrc = await page.locator('.mv-library-image').first().getAttribute('src');
+  expect(imageSrc).toContain('/jellyfin/Items/sport-0/Images/Primary');
+  expect(imageSrc).toContain('ApiKey=test-token');
+  await page.getByRole('searchbox').fill('Sport');
+  await expect(page.getByRole('button', { name: '+ Sport 0', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page.getByRole('searchbox')).toHaveValue('');
+  await expect(page.getByRole('button', { name: '+ Sport 0', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page.getByRole('button', { name: '▸ Sports', exact: true })).toBeVisible();
+  expect(requests.some(request => request.path.includes('/Images/Primary'))).toBe(true);
+});
+
 test('audio selection, duplicate rejection and removal preserve other streams', async ({ page }) => {
   const requests = await fixture(page);
   await page.getByRole('button', { name: '▦ Multiview' }).click();
@@ -142,7 +169,8 @@ test('audio selection, duplicate rejection and removal preserve other streams', 
   await tiles.nth(2).getByRole('button', { name: 'Listen', exact: true }).click();
   expect(await page.locator('video').evaluateAll(videos => videos.map(v => v.muted))).toEqual([true, true, false]);
   await page.getByRole('button', { name: '+ Add stream' }).click();
-  await page.getByRole('button', { name: '▸ Sports' }).click();
+  // The browser reopens in the folder containing the most recently added stream.
+  await expect(page.getByRole('button', { name: '+ Sport 0', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '+ Sport 0', exact: true }).click();
   await expect(page.locator('.mv-notice')).toHaveText('This stream is already in multiview.');
   await expect(tiles).toHaveCount(3);

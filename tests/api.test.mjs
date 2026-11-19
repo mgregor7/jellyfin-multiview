@@ -17,8 +17,10 @@ test('library browsing preserves the server prefix and uses the signed-in user',
   await api.browse('sports', 'A & B', 60);
   assert.equal(captured.url.pathname, '/jellyfin/Users/user1/Items');
   assert.equal(captured.url.searchParams.get('SearchTerm'), 'A & B');
+  assert.equal(captured.url.searchParams.get('IncludeItemTypes'), 'Movie,Episode,Video');
   assert.equal(captured.url.searchParams.get('ParentId'), 'sports');
   assert.equal(captured.url.searchParams.get('StartIndex'), '60');
+  assert.match(captured.url.searchParams.get('Fields'), /PrimaryImageAspectRatio/);
   assert.match(captured.init.headers.Authorization, /Token="secret"/);
   assert.equal(captured.url.searchParams.has('api_key'), false);
   assert.notEqual(api.deviceId, new JellyfinApi(client).deviceId);
@@ -47,4 +49,26 @@ test('media URLs use supported Jellyfin authentication and the pane identity', (
 test('library browsing can reuse the main identity without creating a new device each request', () => {
   const api = new JellyfinApi(client, undefined, false);
   assert.equal(api.deviceId, 'main');
+});
+test('image URLs use primary art, fall back to backdrops and remain server-prefix aware', () => {
+  const api = new JellyfinApi(client, undefined, false);
+  const primary = new URL(api.imageUrl({ Id: 'one', ImageTags: { Primary: 'tag-1' } }));
+  assert.equal(primary.pathname, '/jellyfin/Items/one/Images/Primary');
+  assert.equal(primary.searchParams.get('Tag'), 'tag-1');
+  assert.equal(primary.searchParams.get('MaxWidth'), '320');
+  assert.equal(primary.searchParams.get('ApiKey'), 'secret');
+  const backdrop = new URL(api.imageUrl({ Id: 'two', BackdropImageTags: ['tag-2'] }));
+  assert.equal(backdrop.pathname, '/jellyfin/Items/two/Images/Backdrop/0');
+  assert.equal(api.imageUrl({ Id: 'three' }), null);
+});
+test('ancestor lookup is authenticated and scoped to the current user', async () => {
+  let captured;
+  const api = new JellyfinApi(client, async (url, init) => {
+    captured = { url: new URL(url), init };
+    return new Response('[]');
+  }, false);
+  await api.ancestors('video/id');
+  assert.equal(captured.url.pathname, '/jellyfin/Items/video%2Fid/Ancestors');
+  assert.equal(captured.url.searchParams.get('UserId'), 'user1');
+  assert.match(captured.init.headers.Authorization, /Token="secret"/);
 });

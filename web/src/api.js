@@ -50,10 +50,27 @@ export class JellyfinApi {
   browse(parentId, search, startIndex = 0, signal) {
     return this.request(`Users/${this.userId}/Items`, { signal, query: {
       ...(parentId ? { ParentId: parentId } : {}),
-      ...(search ? { SearchTerm: search, Recursive: true, MediaTypes: 'Video' } : {}),
-      Fields: 'MediaSources', SortBy: 'SortName', SortOrder: 'Ascending',
+      ...(search ? {
+        SearchTerm: search, Recursive: true, MediaTypes: 'Video',
+        IncludeItemTypes: 'Movie,Episode,Video'
+      } : {}),
+      Fields: 'MediaSources,PrimaryImageAspectRatio,ProductionYear,SeriesName', SortBy: 'SortName', SortOrder: 'Ascending',
       StartIndex: startIndex, Limit: 60, EnableTotalRecordCount: true
     } });
+  }
+  ancestors(itemId, signal) {
+    return this.request(`Items/${encodeURIComponent(itemId)}/Ancestors`, {
+      signal, query: { UserId: this.userId }
+    });
+  }
+  imageUrl(item, width = 320) {
+    if (!item?.Id) return null;
+    const primaryTag = item.ImageTags?.Primary;
+    const backdropTag = item.BackdropImageTags?.[0];
+    if (!primaryTag && !backdropTag) return null;
+    return this.mediaUrl(`Items/${item.Id}/Images/${primaryTag ? 'Primary' : 'Backdrop/0'}`, {
+      ...(primaryTag ? { Tag: primaryTag } : {}), MaxWidth: width, Quality: 90
+    });
   }
 }
 export function deviceProfile() {

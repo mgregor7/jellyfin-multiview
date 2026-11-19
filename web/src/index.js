@@ -8,6 +8,20 @@ import { exitAllFullscreen } from './fullscreen.js';
 import { seekRanges, seekTarget, playbackSample, needsRestart } from './media.js';
 
 const MAX_STREAMS = 9;
+export function containingPath(item, ancestors = []) {
+  const byId = new Map(ancestors.map(entry => [entry.Id, entry]));
+  const path = [], seen = new Set();
+  let parentId = item?.ParentId;
+  while (parentId && byId.has(parentId) && !seen.has(parentId)) {
+    seen.add(parentId);
+    const parent = byId.get(parentId);
+    path.push(parent);
+    parentId = parent.ParentId;
+  }
+  // Jellyfin normally returns parents nearest-first. ParentId links make the
+  // result deterministic when present; the fallback supports sparse DTOs.
+  return path.length ? path.reverse() : [...ancestors].reverse();
+}
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -31,6 +45,8 @@ export class Multiview {
     this.tiles = [];
     this.layerOrder = [];
     this.pending = new Set();
+    this.preferredBrowserPath = [];
+    this.addedStreamSelected = false;
     this.closed = false;
     this.preset = 'sports';
     this.snap = true;
@@ -111,6 +127,7 @@ export class Multiview {
       const session = Array.isArray(sessions) && sessions.find(s => s.DeviceId === this.client.deviceId());
       if (!session?.NowPlayingItem?.Id || !this.tiles.includes(tile) || this.originalRemoved) return;
       tile.item = session.NowPlayingItem;
+      void this.rememberContainingPath(tile.item, [], false);
       if (tile.item.Name) {
         const oldName = tile.name;
         tile.name = tile.item.Name;
@@ -118,6 +135,21 @@ export class Multiview {
         tile.node.querySelectorAll('[aria-label]').forEach(node => node.setAttribute('aria-label', node.getAttribute('aria-label').replace(oldName, tile.name)));
       }
     } catch { /* The visible Jellyfin title remains available if session lookup fails. */ }
+  }
+  async rememberContainingPath(item, fallback, added = true) {
+    if (!added && this.addedStreamSelected) return;
+    const request = Symbol('browser-path');
+    this.browserPathRequest = request;
+    if (added) this.addedStreamSelected = true;
+    this.preferredBrowserPath = [...fallback];
+    // Ordinary folder selection already gives us the exact visible path. The
+    // ancestor request is needed for the initial player and recursive search.
+    if (fallback.at(-1)?.Id === item.ParentId) return;
+    try {
+      const ancestors = await this.browseApi.ancestors(item.Id, AbortSignal.timeout(10000));
+      if (this.browserPathRequest !== request || (!added && this.addedStreamSelected)) return;
+      this.preferredBrowserPath = containingPath(item, ancestors);
+    } catch { /* The folder already being browsed remains a useful fallback. */ }
   }
   setCollapsed(collapsed) {
     this.root.classList.toggle('mv-collapsed', collapsed);
@@ -498,6 +530,7 @@ export class Multiview {
     if (this.pending.has(item.Id) || this.tiles.some(t => t.item?.Id === item.Id)) { this.say('This stream is already in multiview.'); return; }
     if (this.tiles.length >= MAX_STREAMS) { this.say(`Up to ${MAX_STREAMS} streams are supported.`); return; }
     this.pending.add(item.Id);
+    void this.rememberContainingPath(item, this.path);
     selectionButton.disabled = true;
     const video = el('video', 'mv-video');
     video.playsInline = true;
@@ -518,7 +551,8 @@ export class Multiview {
     this.sidebar = el('aside', 'mv-sidebar');
     this.sidebar.setAttribute('aria-label', 'Browse library');
     const heading = el('div', 'mv-sidebar-heading');
-    heading.append(el('h2', '', 'Add a stream'), button('×', () => this.closeBrowser(), 'Close library'));
+    this.backButton = button('← Back', () => this.browserBack(), 'Back');
+    heading.append(this.backButton, el('h2', '', 'Add a stream'), button('×', () => this.closeBrowser(), 'Close library'));
     this.search = el('input', 'mv-search');
     this.search.type = 'search';
     this.search.placeholder = 'Search this library';
@@ -528,7 +562,7 @@ export class Multiview {
     this.results.setAttribute('aria-live', 'polite');
     this.sidebar.append(heading, this.search, this.breadcrumb, this.results);
     this.root.append(this.sidebar);
-    this.path = [];
+    this.path = [...this.preferredBrowserPath];
     this.search.addEventListener('input', () => {
       clearTimeout(this.searchTimer);
       this.browseAbort?.abort();
@@ -538,11 +572,19 @@ export class Multiview {
     this.search.focus();
     this.paint();
   }
+  browserBack() {
+    if (!this.sidebar) return;
+    if (this.search.value.trim()) this.search.value = '';
+    else if (this.path.length) this.path.pop();
+    else return;
+    this.loadItems();
+  }
   async loadItems(startIndex = 0) {
     if (!this.sidebar) return;
     this.browseAbort?.abort();
     const abort = this.browseAbort = new AbortController();
     const current = this.path.at(-1);
+    this.backButton.disabled = !this.path.length && !this.search.value.trim();
     this.breadcrumb.replaceChildren(button('Libraries', () => { this.path = []; this.search.value = ''; this.loadItems(); }));
     this.path.forEach((part, index) => this.breadcrumb.append(button(part.Name, () => { this.path = this.path.slice(0, index + 1); this.search.value = ''; this.loadItems(); })));
     if (!startIndex) this.results.replaceChildren(el('p', '', 'Loading…'));
@@ -550,13 +592,29 @@ export class Multiview {
       const data = await this.browseApi.browse(current?.Id, this.search.value.trim(), startIndex, abort.signal);
       if (abort.signal.aborted || !this.sidebar) return;
       if (!startIndex) this.results.replaceChildren();
-      const items = (data.Items || []).filter(item => item.IsFolder || item.MediaType === 'Video');
+      const searching = Boolean(this.search.value.trim());
+      const items = (data.Items || []).filter(item => searching
+        ? !item.IsFolder && item.MediaType === 'Video' && ['Movie', 'Episode', 'Video'].includes(item.Type)
+        : item.IsFolder || item.MediaType === 'Video');
       for (const item of items) {
-        const row = button(`${item.IsFolder ? '▸ ' : '+ '}${item.Name || 'Untitled'}`, () => {
+        const name = item.Name || 'Untitled';
+        const row = button('', () => {
           if (item.IsFolder) { this.path.push(item); this.search.value = ''; this.loadItems(); }
           else void this.add(item, row);
-        });
+        }, `${item.IsFolder ? '▸ ' : '+ '}${name}`);
         row.classList.add('mv-library-item');
+        const artwork = el('span', 'mv-library-art');
+        const imageUrl = this.browseApi.imageUrl(item);
+        if (imageUrl) {
+          const image = el('img', 'mv-library-image');
+          image.src = imageUrl; image.alt = ''; image.loading = 'lazy';
+          artwork.append(image);
+        } else artwork.textContent = item.IsFolder ? '▸' : '▶';
+        const details = el('span', 'mv-library-details');
+        details.append(el('span', 'mv-library-name', name));
+        const metadata = [item.SeriesName, item.ProductionYear].filter(Boolean).join(' · ');
+        if (metadata) details.append(el('span', 'mv-library-meta', metadata));
+        row.append(artwork, details, el('span', 'mv-library-action', item.IsFolder ? '›' : '+'));
         this.results.append(row);
       }
       const next = startIndex + (data.Items || []).length;
