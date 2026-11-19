@@ -51,8 +51,10 @@ async function fixture(page, { delay = 0 } = {}) {
 async function add(page, index) {
   await page.getByRole('button', { name: '+ Add stream' }).click();
   const sports = page.getByRole('button', { name: '▸ Sports' });
-  if (await sports.count()) await sports.click();
-  await page.getByRole('button', { name: `+ Sport ${index}`, exact: true }).click();
+  const stream = page.getByRole('button', { name: `+ Sport ${index}`, exact: true });
+  await expect(sports.or(stream)).toBeVisible();
+  if (await sports.isVisible()) await sports.click();
+  await stream.click();
   await expect(page.locator('.mv-sidebar')).toHaveCount(0);
   await page.locator('.mv-video').evaluateAll(videos => videos.forEach(video => { video.loop = true; }));
 }

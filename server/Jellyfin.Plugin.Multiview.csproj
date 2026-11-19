@@ -3,6 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>Jellyfin.Plugin.Multiview</AssemblyName>
     <RootNamespace>Jellyfin.Plugin.Multiview</RootNamespace>
+    <Description>Independent sports stream viewports for Jellyfin Web.</Description>
     <Version>0.2.7.0</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
