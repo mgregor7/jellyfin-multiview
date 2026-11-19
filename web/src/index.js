@@ -804,5 +804,5 @@ if (!window.JellyfinMultiview) {
   document.addEventListener('emptied', refresh, true);
   refresh();
   showLaunch();
-  window.JellyfinMultiview = { version: '0.2.6', close: () => active?.close(), diagnostics: () => active?.tiles.map(t => ({ name: t.name, ...t.sample })), paintCount: () => active?.paintCount };
+  window.JellyfinMultiview = { version: '0.2.7', close: () => active?.close(), diagnostics: () => active?.tiles.map(t => ({ name: t.name, ...t.sample })), paintCount: () => active?.paintCount };
 }
